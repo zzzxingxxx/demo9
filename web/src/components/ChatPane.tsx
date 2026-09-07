@@ -114,12 +114,20 @@ export function ChatPane() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [skills, setSkills] = useState<Array<{ id: string; name: string }>>([]);
+  const [skillId, setSkillId] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   async function loadMessages(id: string) {
     const data = await apiGet<{ messages: ChatMessage[] }>(`/api/sessions/${id}/messages`);
     setMessages(data.messages);
   }
+
+  useEffect(() => {
+    apiGet<{ skills: Array<{ id: string; name: string }> }>("/api/skills")
+      .then((d) => setSkills(d.skills))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!sessionId) {
@@ -146,6 +154,7 @@ export function ChatPane() {
           projectId: currentId,
           sessionId,
           content,
+          skillId: skillId || undefined,
           truncateFromMessageId
         })
       });
@@ -267,6 +276,14 @@ export function ChatPane() {
             @规则
           </button>
         </div>
+        <select value={skillId} onChange={(e) => setSkillId(e.target.value)} aria-label="技能">
+          <option value="">无技能</option>
+          {skills.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

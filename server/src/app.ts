@@ -6,6 +6,7 @@ import { fileRoutes } from "./routes/files.js";
 import { knowledgeRoutes } from "./routes/knowledge.js";
 import { projectRoutes } from "./routes/projects.js";
 import { sessionRoutes } from "./routes/sessions.js";
+import { skillRoutes } from "./routes/skills.js";
 
 export const app = new Hono();
 
@@ -23,6 +24,7 @@ app.route("/", projectRoutes);
 app.route("/", fileRoutes);
 app.route("/", sessionRoutes);
 app.route("/", knowledgeRoutes);
+app.route("/", skillRoutes);
 app.route("/", chatRoutes);
 
 app.get("/api/health", (c) => c.json({ ok: true }));

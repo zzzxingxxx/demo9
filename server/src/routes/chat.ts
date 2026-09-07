@@ -18,6 +18,7 @@ import {
   truncateFrom,
   updateSession
 } from "../lib/sessions.js";
+import { getSkill, skillPromptAssembly } from "../lib/skills.js";
 
 export const chatRoutes = new Hono();
 
@@ -32,6 +33,7 @@ chatRoutes.post("/api/chat", async (c) => {
         sessionId: z.string().optional(),
         content: z.string().min(1),
         model: z.string().optional(),
+        skillId: z.string().optional(),
         truncateFromMessageId: z.string().optional()
       })
       .parse(await c.req.json());
@@ -47,7 +49,9 @@ chatRoutes.post("/api/chat", async (c) => {
       await truncateFrom(db, session.id, body.truncateFromMessageId);
     }
 
-    await addMessage(db, session.id, "user", body.content);
+    const skill = body.skillId ? getSkill(body.skillId) : undefined;
+    const packed = skill ? skillPromptAssembly(skill, body.content) : { skillPrompt: "", content: body.content };
+    await addMessage(db, session.id, "user", packed.content);
     const title = ensureSessionTitle(session, body.content);
     if (title !== session.title) await updateSession(db, session.id, { title });
 
@@ -80,7 +84,7 @@ chatRoutes.post("/api/chat", async (c) => {
       role: m.role as ChatTurn["role"],
       content: m.content
     }));
-    const system = assembleSystemPrompt({ rules, refs });
+    const system = assembleSystemPrompt({ rules, refs, skillPrompt: packed.skillPrompt });
     const messages = toModelMessages(system, turns);
 
     const result = streamWorkbenchChat({
