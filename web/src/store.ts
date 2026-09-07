@@ -27,6 +27,7 @@ type State = {
   sessionId: string | null;
   rules: RulesPayload | null;
   notice: string | null;
+  paletteOpen: boolean;
   tree: TreeNode[];
   tabs: FileTab[];
   activePath: string | null;
@@ -36,6 +37,7 @@ type State = {
   setSessionId: (id: string | null) => void;
   setRules: (rules: RulesPayload | null) => void;
   setNotice: (notice: string | null) => void;
+  setPaletteOpen: (open: boolean) => void;
   setTree: (tree: TreeNode[]) => void;
   openTab: (tab: FileTab) => void;
   setTabContent: (path: string, content: string) => void;
@@ -53,6 +55,7 @@ export const useWorkbench = create<State>((set) => ({
   sessionId: null,
   rules: null,
   notice: null,
+  paletteOpen: false,
   tree: [],
   tabs: [],
   activePath: null,
@@ -66,6 +69,7 @@ export const useWorkbench = create<State>((set) => ({
   setSessionId: (id) => set({ sessionId: id }),
   setRules: (rules) => set({ rules }),
   setNotice: (notice) => set({ notice }),
+  setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setTree: (tree) => set({ tree }),
   openTab: (tab) =>
     set((s) => {
