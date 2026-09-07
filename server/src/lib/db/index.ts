@@ -9,8 +9,8 @@ export type Db = LibSQLDatabase<typeof schema>;
 let singleton: Db | null = null;
 let singletonClient: Client | null = null;
 
-const CREATE_PROJECTS = `
-CREATE TABLE IF NOT EXISTS projects (
+const CREATE_SQL = [
+  `CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   root_path TEXT,
@@ -18,8 +18,24 @@ CREATE TABLE IF NOT EXISTS projects (
   archived INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
-);
-`;
+);`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);`,
+  `CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);`
+];
 
 export function sqliteUrlFromPath(filePath: string): string {
   const abs = path.resolve(filePath).replaceAll("\\", "/");
@@ -29,7 +45,7 @@ export function sqliteUrlFromPath(filePath: string): string {
 export async function openDb(filePath: string): Promise<{ db: Db; close: () => void }> {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const client = createClient({ url: sqliteUrlFromPath(filePath) });
-  await client.execute(CREATE_PROJECTS);
+  for (const sql of CREATE_SQL) await client.execute(sql);
   return {
     db: drizzle(client, { schema }),
     close: () => client.close()

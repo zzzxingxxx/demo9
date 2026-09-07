@@ -10,9 +10,11 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/xai": "^4.0.54",
     "@hono/node-server": "^1.19.0",
     "@libsql/client": "^0.18.0",
     "@wb/shared": "workspace:*",
+    "ai": "^7.0.93",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.9.6",

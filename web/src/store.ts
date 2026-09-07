@@ -17,6 +17,7 @@ export type TreeNode = {
 type State = {
   projects: Project[];
   currentId: string | null;
+  sessionId: string | null;
   rules: RulesPayload | null;
   notice: string | null;
   tree: TreeNode[];
@@ -24,6 +25,7 @@ type State = {
   activePath: string | null;
   setProjects: (projects: Project[]) => void;
   setCurrentId: (id: string | null) => void;
+  setSessionId: (id: string | null) => void;
   setRules: (rules: RulesPayload | null) => void;
   setNotice: (notice: string | null) => void;
   setTree: (tree: TreeNode[]) => void;
@@ -39,6 +41,7 @@ const persistKey = "wb.currentProject";
 export const useWorkbench = create<State>((set) => ({
   projects: [],
   currentId: localStorage.getItem(persistKey),
+  sessionId: null,
   rules: null,
   notice: null,
   tree: [],
@@ -48,8 +51,9 @@ export const useWorkbench = create<State>((set) => ({
   setCurrentId: (id) => {
     if (id) localStorage.setItem(persistKey, id);
     else localStorage.removeItem(persistKey);
-    set({ currentId: id, tabs: [], activePath: null, tree: [] });
+    set({ currentId: id, sessionId: null, tabs: [], activePath: null, tree: [] });
   },
+  setSessionId: (id) => set({ sessionId: id }),
   setRules: (rules) => set({ rules }),
   setNotice: (notice) => set({ notice }),
   setTree: (tree) => set({ tree }),

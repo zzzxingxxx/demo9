@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiSend, type Project } from "../api";
 import { Canvas } from "../components/Canvas";
+import { ChatPane, SessionsPanel } from "../components/ChatPane";
 import { FileTree } from "../components/FileTree";
 import { useWorkbench, type TreeNode } from "../store";
 
@@ -99,7 +100,7 @@ export function Workbench() {
           </section>
           <section className="section">
             <h3>会话</h3>
-            <p className="hint">对话记录会列在这里，可搜索、置顶、归档。</p>
+            <SessionsPanel />
           </section>
           <section className="section">
             <h3>文件</h3>
@@ -113,20 +114,7 @@ export function Workbench() {
       </aside>
       <section className="pane" aria-label="对话">
         <div className="pane-head">对话</div>
-        <div className="chat-log">
-          <p className="hint">从这里开始：写周报、读文档提问、或起草方案。引用文件请用 @。</p>
-        </div>
-        <form
-          className="composer"
-          onSubmit={(e) => {
-            e.preventDefault();
-          }}
-        >
-          <textarea name="prompt" placeholder="输入消息，用 @ 引用文件、知识或规则" />
-          <button className="btn btn-primary" type="submit">
-            发送
-          </button>
-        </form>
+        <ChatPane />
       </section>
       <section className="pane" aria-label="画布">
         <div className="pane-head">画布</div>
