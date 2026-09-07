@@ -1,5 +1,32 @@
+import { useEffect, useState } from "react";
+import Editor, { DiffEditor } from "@monaco-editor/react";
 import { apiSend } from "../api";
+import { languageFromPath } from "../lib/languageFromPath";
 import { useWorkbench } from "../store";
+
+function useEditorTheme() {
+  const [theme, setTheme] = useState(() =>
+    document.documentElement.dataset.theme === "dark" ? "vs-dark" : "vs"
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const apply = () => setTheme(root.dataset.theme === "dark" ? "vs-dark" : "vs");
+    apply();
+    const obs = new MutationObserver(apply);
+    obs.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+  return theme;
+}
+
+const editorOptions = {
+  minimap: { enabled: false },
+  fontSize: 13,
+  wordWrap: "on" as const,
+  scrollBeyondLastLine: false,
+  automaticLayout: true,
+  tabSize: 2
+};
 
 export function Canvas() {
   const {
@@ -17,6 +44,7 @@ export function Canvas() {
   } = useWorkbench();
   const tab = tabs.find((t) => t.path === activePath) ?? null;
   const dirty = tab ? tab.content !== tab.original : false;
+  const theme = useEditorTheme();
 
   async function save() {
     if (!currentId || !tab) return;
@@ -64,11 +92,17 @@ export function Canvas() {
       </div>
       {tab ? (
         <>
-          <textarea
-            className="editor"
-            value={tab.content}
-            onChange={(e) => setTabContent(tab.path, e.target.value)}
-          />
+          <div className="monaco-host">
+            <Editor
+              key={tab.path}
+              height="100%"
+              theme={theme}
+              language={languageFromPath(tab.path)}
+              value={tab.content}
+              onChange={(value) => setTabContent(tab.path, value ?? "")}
+              options={editorOptions}
+            />
+          </div>
           <div className="canvas-bar">
             <span>{dirty ? "未保存" : "已保存"}</span>
             <button
@@ -95,7 +129,22 @@ export function Canvas() {
           </div>
           {pendingDiff ? (
             <div className="diff-panel">
-              <pre className="diff-view">{pendingDiff.diff}</pre>
+              <div className="diff-monaco">
+                <DiffEditor
+                  key={pendingDiff.path}
+                  height="100%"
+                  theme={theme}
+                  language={languageFromPath(pendingDiff.path)}
+                  original={pendingDiff.before}
+                  modified={pendingDiff.after}
+                  options={{
+                    ...editorOptions,
+                    readOnly: true,
+                    renderSideBySide: true,
+                    originalEditable: false
+                  }}
+                />
+              </div>
               <div className="canvas-bar">
                 <span>确认后才会写盘</span>
                 <button className="btn" type="button" onClick={() => setPendingDiff(null)}>

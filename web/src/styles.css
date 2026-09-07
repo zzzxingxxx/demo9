@@ -279,6 +279,11 @@ a {
   resize: none;
 }
 
+.monaco-host {
+  flex: 1;
+  min-height: 0;
+}
+
 .canvas-bar {
   display: flex;
   justify-content: space-between;
@@ -376,10 +381,17 @@ a {
 
 .diff-panel {
   border-top: 1px solid var(--line);
-  max-height: 40%;
-  overflow: auto;
-  background: #1b211c;
-  color: #e6eddf;
+  height: 42%;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.diff-monaco {
+  flex: 1;
+  min-height: 0;
 }
 
 .diff-view {

@@ -23,5 +23,11 @@ export default defineConfig({
   preview: {
     host: "127.0.0.1",
     port: 4173
+  },
+  optimizeDeps: {
+    include: ["monaco-editor", "@monaco-editor/react"]
+  },
+  worker: {
+    format: "es"
   }
 });

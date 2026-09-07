@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { parseTheme } from "@wb/shared";
 import { App } from "./App";
 import { applyTheme } from "./pages/SettingsPage";
+import "./monacoEnv";
 import "./styles.css";
 
 applyTheme(parseTheme(localStorage.getItem("wb.theme")));
