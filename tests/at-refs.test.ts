@@ -32,4 +32,20 @@ describe("@ mention context assembly", () => {
     expect(prompt).toContain("@规则 AGENTS.md");
     expect(prompt).toContain("不要编造路径");
   });
+
+  it("resolveChatRefs plus assembleSystemPrompt attaches @知识 without a project root", async () => {
+    const mentions = parseAtMentions("根据 @知识 笔记.md 总结，并忽略 @文件 src/a.ts");
+    const refs = await resolveChatRefs(mentions, {
+      loadKnowledge: async (name) => {
+        expect(name).toBe("笔记.md");
+        return { title: "笔记.md", content: "第一期切片：绑定目录是可选的" };
+      }
+    });
+    expect(refs.map((r) => r.kind)).toEqual(["knowledge"]);
+    expect(refs[0]?.content).toContain("绑定目录是可选的");
+    const prompt = assembleSystemPrompt({ refs });
+    expect(prompt).toContain("@知识 笔记.md");
+    expect(prompt).toContain("第一期切片：绑定目录是可选的");
+    expect(prompt).not.toContain("src/a.ts");
+  });
 });

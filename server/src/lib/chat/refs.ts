@@ -23,10 +23,10 @@ export function parseAtMentions(input: string): Mention[] {
 }
 
 export type RefLoaders = {
-  readFile: (rel: string) => Promise<string>;
-  listTree: () => Promise<TreeNode[]>;
-  loadRules: () => Promise<{ file: string | null; content: string }>;
-  loadKnowledge: (name: string) => Promise<{ title: string; content: string } | null>;
+  readFile?: (rel: string) => Promise<string>;
+  listTree?: () => Promise<TreeNode[]>;
+  loadRules?: () => Promise<{ file: string | null; content: string }>;
+  loadKnowledge?: (name: string) => Promise<{ title: string; content: string } | null>;
 };
 
 function flattenFiles(nodes: TreeNode[], prefix = ""): string[] {
@@ -46,18 +46,21 @@ export async function resolveChatRefs(mentions: Mention[], loaders: RefLoaders):
   const refs: ChatRef[] = [];
   for (const mention of mentions) {
     if (mention.kind === "file") {
-      if (!mention.name) continue;
+      if (!mention.name || !loaders.readFile) continue;
       const content = await loaders.readFile(mention.name);
       refs.push({ kind: "file", name: mention.name, content });
     } else if (mention.kind === "folder") {
+      if (!loaders.listTree) continue;
       const tree = await loaders.listTree();
       const files = flattenFiles(tree, mention.name);
       const listing = files.join("\n");
       refs.push({ kind: "folder", name: mention.name || ".", content: listing || "(空目录)" });
     } else if (mention.kind === "rules") {
+      if (!loaders.loadRules) continue;
       const rules = await loaders.loadRules();
       refs.push({ kind: "rules", name: rules.file || "规则", content: rules.content || "(无规则文件)" });
     } else if (mention.kind === "knowledge") {
+      if (!loaders.loadKnowledge) continue;
       const doc = await loaders.loadKnowledge(mention.name);
       if (doc) refs.push({ kind: "knowledge", name: doc.title, content: doc.content });
     }

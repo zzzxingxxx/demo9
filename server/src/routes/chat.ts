@@ -65,19 +65,18 @@ chatRoutes.post("/api/chat", async (c) => {
     }
 
     const mentions = parseAtMentions(body.content);
-    const refs = project.rootPath
-      ? await resolveChatRefs(mentions, {
-          readFile: (rel) => readProjectFile(project.rootPath!, rel),
-          listTree: () => listTree(project.rootPath!),
-          loadRules: () => loadProjectRules(project.rootPath!),
-          loadKnowledge: async (name) => {
-            const docs = await listKnowledge(db, project.id);
-            const content = attachKnowledgeSlices(docs, name);
-            if (!content) return null;
-            return { title: name || "知识", content };
-          }
-        })
-      : [];
+    const root = project.rootPath;
+    const refs = await resolveChatRefs(mentions, {
+      readFile: root ? (rel) => readProjectFile(root, rel) : undefined,
+      listTree: root ? () => listTree(root) : undefined,
+      loadRules: root ? () => loadProjectRules(root) : undefined,
+      loadKnowledge: async (name) => {
+        const docs = await listKnowledge(db, project.id);
+        const content = attachKnowledgeSlices(docs, name);
+        if (!content) return null;
+        return { title: name || "知识", content };
+      }
+    });
 
     const history = await listMessages(db, session.id);
     const turns: ChatTurn[] = history.map((m) => ({
