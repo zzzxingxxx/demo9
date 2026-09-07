@@ -190,9 +190,16 @@ a {
 
 .composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px;
   border-top: 1px solid var(--line);
+}
+
+.at-bar {
+  display: flex;
+  gap: 6px;
+  width: 100%;
 }
 
 .composer textarea {

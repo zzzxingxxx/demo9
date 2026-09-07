@@ -108,7 +108,7 @@ export function SessionsPanel() {
 }
 
 export function ChatPane() {
-  const { currentId, sessionId, setSessionId, setNotice } = useWorkbench();
+  const { currentId, sessionId, setSessionId, setNotice, activePath, tree } = useWorkbench();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -215,10 +215,36 @@ export function ChatPane() {
         )}
       </div>
       <form className="composer" onSubmit={onSubmit}>
+        <div className="at-bar" aria-label="引用">
+          <button
+            type="button"
+            className="btn"
+            disabled={!activePath}
+            onClick={() => {
+              if (activePath) setDraft((d) => `${d} @文件 ${activePath} `.trimStart());
+            }}
+          >
+            @文件
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={tree.length === 0}
+            onClick={() => setDraft((d) => `${d} @文件夹 . `.trimStart())}
+          >
+            @文件夹
+          </button>
+          <button type="button" className="btn" onClick={() => setDraft((d) => `${d} @知识 `.trimStart())}>
+            @知识
+          </button>
+          <button type="button" className="btn" onClick={() => setDraft((d) => `${d} @规则 `.trimStart())}>
+            @规则
+          </button>
+        </div>
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="输入消息，用 @ 引用文件、知识或规则"
+          placeholder="输入消息，用 @文件 @文件夹 @知识 @规则 引用"
         />
         {streaming ? (
           <button className="btn" type="button" onClick={() => abortRef.current?.abort()}>

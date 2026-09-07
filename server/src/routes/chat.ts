@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { assembleSystemPrompt, toModelMessages, type ChatTurn } from "../lib/chat/assemble.js";
+import { parseAtMentions, resolveChatRefs } from "../lib/chat/refs.js";
 import { streamWorkbenchChat } from "../lib/chat/stream.js";
 import { getDb } from "../lib/db/index.js";
 import { getMissingKeyError, publicError, readModel } from "../lib/env.js";
+import { listTree, readProjectFile } from "../lib/files.js";
 import { getProject } from "../lib/projects.js";
 import { loadProjectRules } from "../lib/rules.js";
 import {
@@ -57,12 +59,22 @@ chatRoutes.post("/api/chat", async (c) => {
       }
     }
 
+    const mentions = parseAtMentions(body.content);
+    const refs = project.rootPath
+      ? await resolveChatRefs(mentions, {
+          readFile: (rel) => readProjectFile(project.rootPath!, rel),
+          listTree: () => listTree(project.rootPath!),
+          loadRules: () => loadProjectRules(project.rootPath!),
+          loadKnowledge: async () => null
+        })
+      : [];
+
     const history = await listMessages(db, session.id);
     const turns: ChatTurn[] = history.map((m) => ({
       role: m.role as ChatTurn["role"],
       content: m.content
     }));
-    const system = assembleSystemPrompt({ rules });
+    const system = assembleSystemPrompt({ rules, refs });
     const messages = toModelMessages(system, turns);
 
     const result = streamWorkbenchChat({
