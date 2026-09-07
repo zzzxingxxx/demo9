@@ -1,9 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiSend, type Project } from "../api";
-import { useWorkbench } from "../store";
+import { Canvas } from "../components/Canvas";
+import { FileTree } from "../components/FileTree";
+import { useWorkbench, type TreeNode } from "../store";
 
 export function Workbench() {
-  const { projects, currentId, rules, notice, setProjects, setCurrentId, setRules, setNotice } =
+  const { projects, currentId, rules, notice, setProjects, setCurrentId, setRules, setNotice, setTree } =
     useWorkbench();
   const [name, setName] = useState("");
   const [rootPath, setRootPath] = useState("");
@@ -30,7 +32,10 @@ export function Workbench() {
     apiGet<NonNullable<typeof rules>>(`/api/projects/${currentId}/rules`)
       .then(setRules)
       .catch((err: unknown) => setNotice(err instanceof Error ? err.message : "无法读取规则"));
-  }, [currentId, setNotice, setRules]);
+    apiGet<{ tree: TreeNode[] }>(`/api/files?projectId=${encodeURIComponent(currentId)}`)
+      .then((d) => setTree(d.tree))
+      .catch((err: unknown) => setNotice(err instanceof Error ? err.message : "无法列出文件"));
+  }, [currentId, setNotice, setRules, setTree]);
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -98,7 +103,7 @@ export function Workbench() {
           </section>
           <section className="section">
             <h3>文件</h3>
-            <p className="hint">打开绑定目录后可浏览文件。</p>
+            <FileTree />
           </section>
           <section className="section">
             <h3>知识</h3>
@@ -125,7 +130,7 @@ export function Workbench() {
       </section>
       <section className="pane" aria-label="画布">
         <div className="pane-head">画布</div>
-        <div className="canvas-empty">打开文件后在这里编辑。AI 给出的代码改动会先出 diff，确认后再写盘。</div>
+        <Canvas />
       </section>
     </main>
   );
