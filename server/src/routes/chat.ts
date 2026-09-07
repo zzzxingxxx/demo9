@@ -92,6 +92,7 @@ chatRoutes.post("/api/chat", async (c) => {
       model: body.model || readModel(process.env),
       messages,
       abortSignal: c.req.raw.signal,
+      rootPath: project.rootPath,
       onFinish: async (text) => {
         if (text.trim()) await addMessage(db, session.id, "assistant", text);
       }
