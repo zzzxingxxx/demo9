@@ -62,9 +62,12 @@ export const useWorkbench = create<State>((set) => ({
   pendingDiff: null,
   setProjects: (projects) => set({ projects }),
   setCurrentId: (id) => {
-    if (id) localStorage.setItem(persistKey, id);
-    else localStorage.removeItem(persistKey);
-    set({ currentId: id, sessionId: null, tabs: [], activePath: null, tree: [] });
+    set((s) => {
+      if (s.currentId === id) return s;
+      if (id) localStorage.setItem(persistKey, id);
+      else localStorage.removeItem(persistKey);
+      return { currentId: id, sessionId: null, tabs: [], activePath: null, tree: [] };
+    });
   },
   setSessionId: (id) => set({ sessionId: id }),
   setRules: (rules) => set({ rules }),
