@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getMissingKeyError, readModel } from "./lib/env.js";
+import { projectRoutes } from "./routes/projects.js";
 
 export const app = new Hono();
 
@@ -12,6 +13,8 @@ app.use(
     allowHeaders: ["Content-Type"]
   })
 );
+
+app.route("/", projectRoutes);
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 

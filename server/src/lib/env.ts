@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { DEFAULT_MODEL, MISSING_API_KEY_CODE, type ApiErrorBody } from "@wb/shared";
 
 export type AppEnv = {
@@ -32,6 +33,10 @@ export function readModel(env: Record<string, string | undefined> = process.env)
 }
 
 export function publicError(error: unknown): ApiErrorBody {
+  if (error instanceof ZodError) {
+    const first = error.issues[0];
+    return { code: "INVALID", error: first?.message || "参数无效" };
+  }
   if (error && typeof error === "object" && "code" in error && "error" in error) {
     const body = error as ApiErrorBody;
     if (typeof body.code === "string" && typeof body.error === "string") {

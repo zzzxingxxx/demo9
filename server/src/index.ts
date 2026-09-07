@@ -7,6 +7,7 @@ import { readListenHost, readListenPort } from "./lib/env.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../");
 config({ path: resolve(root, ".env") });
+process.env.REPO_ROOT = root;
 
 const hostname = readListenHost(process.env);
 const port = readListenPort(process.env);

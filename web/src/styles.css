@@ -160,6 +160,27 @@ a {
   background: var(--fill);
 }
 
+.list-btn.active {
+  background: var(--fill);
+  border-color: var(--line);
+  font-weight: 650;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.stack input {
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .chat-log {
   flex: 1;
   overflow: auto;
