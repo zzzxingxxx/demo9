@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getDb } from "../lib/db/index.js";
 import { publicError } from "../lib/env.js";
+import { applyUnifiedDiff } from "@wb/shared";
 import { listTree, readProjectFile, searchTreeByName, writeProjectFile } from "../lib/files.js";
 import { getProject } from "../lib/projects.js";
 
@@ -68,6 +69,26 @@ fileRoutes.put("/api/files/content", async (c) => {
     const root = await boundRoot(body.projectId);
     await writeProjectFile(root, body.path, body.content, body.confirm);
     return c.json({ ok: true, path: body.path });
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
+});
+
+fileRoutes.post("/api/files/apply-diff", async (c) => {
+  try {
+    const body = z
+      .object({
+        projectId: z.string().min(1),
+        path: z.string().min(1),
+        diff: z.string().min(1),
+        confirm: z.boolean().optional()
+      })
+      .parse(await c.req.json());
+    const root = await boundRoot(body.projectId);
+    const before = await readProjectFile(root, body.path);
+    const after = applyUnifiedDiff(before, body.diff);
+    await writeProjectFile(root, body.path, after, body.confirm);
+    return c.json({ ok: true, path: body.path, content: after });
   } catch (err) {
     return c.json(publicError(err), 400);
   }

@@ -67,6 +67,9 @@ importers:
 
   web:
     dependencies:
+      '@wb/shared':
+        specifier: workspace:*
+        version: link:../shared
       lucide-react:
         specifier: ^0.542.0
         version: 0.542.0(react@18.3.1)

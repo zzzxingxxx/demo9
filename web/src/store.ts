@@ -7,6 +7,13 @@ export type FileTab = {
   original: string;
 };
 
+export type PendingDiff = {
+  path: string;
+  before: string;
+  after: string;
+  diff: string;
+};
+
 export type TreeNode = {
   name: string;
   rel: string;
@@ -23,6 +30,7 @@ type State = {
   tree: TreeNode[];
   tabs: FileTab[];
   activePath: string | null;
+  pendingDiff: PendingDiff | null;
   setProjects: (projects: Project[]) => void;
   setCurrentId: (id: string | null) => void;
   setSessionId: (id: string | null) => void;
@@ -34,6 +42,7 @@ type State = {
   markSaved: (path: string, content: string) => void;
   closeTab: (path: string) => void;
   setActivePath: (path: string | null) => void;
+  setPendingDiff: (diff: PendingDiff | null) => void;
 };
 
 const persistKey = "wb.currentProject";
@@ -47,6 +56,7 @@ export const useWorkbench = create<State>((set) => ({
   tree: [],
   tabs: [],
   activePath: null,
+  pendingDiff: null,
   setProjects: (projects) => set({ projects }),
   setCurrentId: (id) => {
     if (id) localStorage.setItem(persistKey, id);
@@ -79,5 +89,6 @@ export const useWorkbench = create<State>((set) => ({
       const activePath = s.activePath === path ? (tabs[tabs.length - 1]?.path ?? null) : s.activePath;
       return { tabs, activePath };
     }),
-  setActivePath: (path) => set({ activePath: path })
+  setActivePath: (path) => set({ activePath: path }),
+  setPendingDiff: (pendingDiff) => set({ pendingDiff })
 }));

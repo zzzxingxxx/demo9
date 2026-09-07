@@ -13,7 +13,11 @@
     "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@wb/shared": ["../shared/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

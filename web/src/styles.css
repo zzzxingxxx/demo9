@@ -359,3 +359,18 @@ a {
   cursor: pointer;
   font-size: 11px;
 }
+
+.diff-panel {
+  border-top: 1px solid var(--line);
+  max-height: 40%;
+  overflow: auto;
+  background: #1b211c;
+  color: #e6eddf;
+}
+
+.diff-view {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+}

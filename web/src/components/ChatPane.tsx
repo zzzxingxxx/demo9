@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { createUnifiedDiff, extractCodeBlocks } from "@wb/shared";
 import { apiGet, apiSend } from "../api";
 import { useWorkbench } from "../store";
 
@@ -108,7 +109,8 @@ export function SessionsPanel() {
 }
 
 export function ChatPane() {
-  const { currentId, sessionId, setSessionId, setNotice, activePath, tree } = useWorkbench();
+  const { currentId, sessionId, setSessionId, setNotice, activePath, tree, tabs, setPendingDiff } =
+    useWorkbench();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -210,6 +212,30 @@ export function ChatPane() {
                 ) : null}
               </header>
               <pre>{m.content}</pre>
+              {m.role === "assistant"
+                ? extractCodeBlocks(m.content).map((block, bi) => (
+                    <button
+                      key={bi}
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const tab = tabs.find((t) => t.path === activePath);
+                        if (!tab || !activePath) {
+                          setNotice("先打开一个文件再应用到画布");
+                          return;
+                        }
+                        setPendingDiff({
+                          path: activePath,
+                          before: tab.original,
+                          after: block.code,
+                          diff: createUnifiedDiff(activePath, tab.original, block.code)
+                        });
+                      }}
+                    >
+                      应用到画布
+                    </button>
+                  ))
+                : null}
             </article>
           ))
         )}

@@ -2,8 +2,19 @@ import { apiSend } from "../api";
 import { useWorkbench } from "../store";
 
 export function Canvas() {
-  const { currentId, tabs, activePath, setActivePath, setTabContent, markSaved, closeTab, setNotice } =
-    useWorkbench();
+  const {
+    currentId,
+    tabs,
+    activePath,
+    pendingDiff,
+    setActivePath,
+    setTabContent,
+    markSaved,
+    closeTab,
+    setNotice,
+    setPendingDiff,
+    openTab
+  } = useWorkbench();
   const tab = tabs.find((t) => t.path === activePath) ?? null;
   const dirty = tab ? tab.content !== tab.original : false;
 
@@ -60,10 +71,57 @@ export function Canvas() {
           />
           <div className="canvas-bar">
             <span>{dirty ? "未保存" : "已保存"}</span>
+            <button
+              className="btn"
+              type="button"
+              onClick={async () => {
+                if (!currentId || !tab) return;
+                const rel = window.prompt("另存为（项目内相对路径）", tab.path.replace(/\.[^.]+$/, ".md"));
+                if (!rel) return;
+                await apiSend("/api/files/content", "PUT", {
+                  projectId: currentId,
+                  path: rel,
+                  content: tab.content,
+                  confirm: true
+                });
+                openTab({ path: rel, content: tab.content, original: tab.content });
+              }}
+            >
+              另存为
+            </button>
             <button className="btn btn-primary" type="button" onClick={save} disabled={!dirty}>
               保存
             </button>
           </div>
+          {pendingDiff ? (
+            <div className="diff-panel">
+              <pre className="diff-view">{pendingDiff.diff}</pre>
+              <div className="canvas-bar">
+                <span>确认后才会写盘</span>
+                <button className="btn" type="button" onClick={() => setPendingDiff(null)}>
+                  取消
+                </button>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={async () => {
+                    if (!currentId) return;
+                    const res = await apiSend<{ content: string }>("/api/files/apply-diff", "POST", {
+                      projectId: currentId,
+                      path: pendingDiff.path,
+                      diff: pendingDiff.diff,
+                      confirm: true
+                    });
+                    markSaved(pendingDiff.path, res.content);
+                    setTabContent(pendingDiff.path, res.content);
+                    setPendingDiff(null);
+                  }}
+                >
+                  确认写盘
+                </button>
+              </div>
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>
