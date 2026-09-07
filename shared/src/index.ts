@@ -7,3 +7,4 @@ export type ApiErrorBody = {
 };
 
 export * from "./diff.js";
+export * from "./settings.js";

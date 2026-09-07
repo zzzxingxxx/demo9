@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="light"] {
   --bg: #eceee9;
   --panel: #fbfbf8;
   --ink: #1a1c19;
@@ -10,6 +11,19 @@
   --chat: #f3f6f1;
   --fill: #e7ebe3;
   --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --bg: #121411;
+  --panel: #1c1f1a;
+  --ink: #e8eadf;
+  --muted: #9aa392;
+  --line: #33382f;
+  --accent: #3cb87a;
+  --accent-ink: #062315;
+  --danger: #e07a6a;
+  --chat: #161914;
+  --fill: #262b24;
 }
 
 * {

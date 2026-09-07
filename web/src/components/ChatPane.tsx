@@ -153,6 +153,7 @@ export function ChatPane() {
         body: JSON.stringify({
           projectId: currentId,
           sessionId,
+          model: localStorage.getItem("wb.model") || undefined,
           content,
           skillId: skillId || undefined,
           truncateFromMessageId
@@ -287,6 +288,12 @@ export function ChatPane() {
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              onSubmit(e);
+            }
+          }}
           placeholder="输入消息，用 @文件 @文件夹 @知识 @规则 引用"
         />
         {streaming ? (
