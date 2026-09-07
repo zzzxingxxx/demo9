@@ -33,3 +33,15 @@ export const messages = sqliteTable("messages", {
 
 export type Session = typeof sessions.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+
+export const knowledge = sqliteTable("knowledge", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull(),
+  title: text("title").notNull(),
+  tags: text("tags").notNull().default(""),
+  sourceName: text("source_name").notNull(),
+  text: text("text").notNull(),
+  createdAt: integer("created_at").notNull()
+});
+
+export type KnowledgeDoc = typeof knowledge.$inferSelect;

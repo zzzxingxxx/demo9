@@ -34,6 +34,15 @@ const CREATE_SQL = [
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL
+);`,
+  `CREATE TABLE IF NOT EXISTS knowledge (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  tags TEXT NOT NULL DEFAULT '',
+  source_name TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL
 );`
 ];
 

@@ -3,6 +3,7 @@ import { apiGet, apiSend, type Project } from "../api";
 import { Canvas } from "../components/Canvas";
 import { ChatPane, SessionsPanel } from "../components/ChatPane";
 import { FileTree } from "../components/FileTree";
+import { KnowledgePanel } from "../components/KnowledgePanel";
 import { useWorkbench, type TreeNode } from "../store";
 
 export function Workbench() {
@@ -108,7 +109,7 @@ export function Workbench() {
           </section>
           <section className="section">
             <h3>知识</h3>
-            <p className="hint">上传 MD / TXT / PDF 后可在对话里 @知识。</p>
+            <KnowledgePanel />
           </section>
         </div>
       </aside>

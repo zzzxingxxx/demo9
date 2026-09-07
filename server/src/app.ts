@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { getMissingKeyError, readModel } from "./lib/env.js";
 import { chatRoutes } from "./routes/chat.js";
 import { fileRoutes } from "./routes/files.js";
+import { knowledgeRoutes } from "./routes/knowledge.js";
 import { projectRoutes } from "./routes/projects.js";
 import { sessionRoutes } from "./routes/sessions.js";
 
@@ -21,6 +22,7 @@ app.use(
 app.route("/", projectRoutes);
 app.route("/", fileRoutes);
 app.route("/", sessionRoutes);
+app.route("/", knowledgeRoutes);
 app.route("/", chatRoutes);
 
 app.get("/api/health", (c) => c.json({ ok: true }));

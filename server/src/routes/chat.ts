@@ -6,6 +6,7 @@ import { streamWorkbenchChat } from "../lib/chat/stream.js";
 import { getDb } from "../lib/db/index.js";
 import { getMissingKeyError, publicError, readModel } from "../lib/env.js";
 import { listTree, readProjectFile } from "../lib/files.js";
+import { attachKnowledgeSlices, listKnowledge } from "../lib/knowledge.js";
 import { getProject } from "../lib/projects.js";
 import { loadProjectRules } from "../lib/rules.js";
 import {
@@ -65,7 +66,12 @@ chatRoutes.post("/api/chat", async (c) => {
           readFile: (rel) => readProjectFile(project.rootPath!, rel),
           listTree: () => listTree(project.rootPath!),
           loadRules: () => loadProjectRules(project.rootPath!),
-          loadKnowledge: async () => null
+          loadKnowledge: async (name) => {
+            const docs = await listKnowledge(db, project.id);
+            const content = attachKnowledgeSlices(docs, name);
+            if (!content) return null;
+            return { title: name || "知识", content };
+          }
         })
       : [];
 
