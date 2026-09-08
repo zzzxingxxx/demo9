@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../api";
-import { useWorkbench } from "../store";
+import { knowledgeTabPath, useWorkbench } from "../store";
 
 type Doc = { id: string; title: string; tags: string; sourceName?: string };
 type SourceCard = { id: string; title: string; snippet: string; score: number };
@@ -17,7 +17,7 @@ export function KnowledgePanel() {
   const { currentId, setNotice, openTab } = useWorkbench();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [tags, setTags] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [url, setUrl] = useState("");
   const [q, setQ] = useState("");
   const [cards, setCards] = useState<SourceCard[]>([]);
@@ -38,21 +38,23 @@ export function KnowledgePanel() {
 
   async function onUpload(e: FormEvent) {
     e.preventDefault();
-    if (!currentId || !file) return;
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = "";
-    bytes.forEach((b) => {
-      binary += String.fromCharCode(b);
-    });
+    if (!currentId || files.length === 0) return;
     try {
-      await apiSend("/api/knowledge", "POST", {
-        projectId: currentId,
-        filename: file.name,
-        tags,
-        contentBase64: btoa(binary)
-      });
-      setFile(null);
+      for (const file of files) {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = "";
+        bytes.forEach((b) => {
+          binary += String.fromCharCode(b);
+        });
+        await apiSend("/api/knowledge", "POST", {
+          projectId: currentId,
+          filename: file.name,
+          tags,
+          contentBase64: btoa(binary)
+        });
+      }
+      setFiles([]);
       setTags("");
       await reload();
     } catch (err) {
@@ -102,7 +104,7 @@ export function KnowledgePanel() {
         end: data.citation.end
       });
       openTab({
-        path: `.knowledge/${data.knowledge.title}`,
+        path: knowledgeTabPath(id, data.knowledge.title),
         content: data.knowledge.text,
         original: data.knowledge.text
       });
@@ -119,10 +121,11 @@ export function KnowledgePanel() {
         <input
           type="file"
           accept=".md,.txt,.pdf"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          multiple
+          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
         />
         <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="标签，逗号分隔" />
-        <button className="btn btn-primary" type="submit" disabled={!file}>
+        <button className="btn btn-primary" type="submit" disabled={files.length === 0}>
           上传知识
         </button>
       </form>

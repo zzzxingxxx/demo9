@@ -1,7 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { MODEL_OPTIONS, parseTheme, SHORTCUTS, type ThemeName } from "@wb/shared";
+import { Activity, ArrowLeft, CheckCircle2, CircleAlert, Command, Cpu, LoaderCircle, Moon, Palette, Plus, Sparkles, Sun, Trash2 } from "lucide-react";
+import { MODEL_OPTIONS, parseFontSize, parseTheme, type ThemeName } from "@wb/shared";
 import { apiGet, apiSend } from "../api";
+import { useWorkbench } from "../store";
 
 type SettingsPayload = {
   model: string;
@@ -10,6 +12,14 @@ type SettingsPayload = {
   requestLog?: boolean;
 };
 
+type UsageSummary = {
+  count: number;
+  tokensIn: number;
+  tokensOut: number;
+  perDay: Array<{ day: string; count: number; tokens: number }>;
+};
+
+type Skill = { id: string; name: string; builtin?: boolean };
 const MODEL_KEY = "wb.model";
 const THEME_KEY = "wb.theme";
 
@@ -17,150 +27,173 @@ export function applyTheme(theme: ThemeName) {
   document.documentElement.dataset.theme = theme;
 }
 
+export function applyFontSize(size: number) {
+  document.documentElement.style.setProperty("--app-font-size", `${parseFontSize(size)}px`);
+}
+
 export function SettingsPage() {
   const [data, setData] = useState<SettingsPayload | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState(localStorage.getItem(MODEL_KEY) || "grok-4.5");
   const [theme, setTheme] = useState<ThemeName>(parseTheme(localStorage.getItem(THEME_KEY)));
+  const fontSize = useWorkbench((s) => s.fontSize);
+  const setFontSize = useWorkbench((s) => s.setFontSize);
   const [requestLog, setRequestLog] = useState(false);
-  const [usage, setUsage] = useState<string>("");
+  const [savingLog, setSavingLog] = useState(false);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [skillName, setSkillName] = useState("");
   const [skillPersona, setSkillPersona] = useState("");
   const [skillRefs, setSkillRefs] = useState("");
   const [skillPrompt, setSkillPrompt] = useState("");
-  const [customSkills, setCustomSkills] = useState<Array<{ id: string; name: string; builtin?: boolean }>>([]);
+  const [customSkills, setCustomSkills] = useState<Skill[]>([]);
+  const [savingSkill, setSavingSkill] = useState(false);
+  const [deletingSkill, setDeletingSkill] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then(async (res) => {
-        const body = (await res.json()) as SettingsPayload;
+    let cancelled = false;
+    apiGet<SettingsPayload>("/api/settings")
+      .then((body) => {
+        if (cancelled) return;
         setData(body);
         setRequestLog(Boolean(body.requestLog));
       })
-      .catch((err: unknown) => {
-        setLoadError(err instanceof Error ? err.message : "无法读取设置");
-      });
+      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : "无法读取设置"); });
+    apiGet<{ summary: UsageSummary }>("/api/usage")
+      .then((result) => { if (!cancelled) setUsage(result.summary); })
+      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : "无法读取用量"); });
+    apiGet<{ skills: Skill[] }>("/api/skills")
+      .then((result) => { if (!cancelled) setCustomSkills(result.skills.filter((skill) => !skill.builtin)); })
+      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : "无法读取技能"); });
+    return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    apiGet<{ summary: { count: number; tokensIn: number; tokensOut: number; perDay: Array<{ day: string; count: number; tokens: number }> } }>(
-      "/api/usage"
-    )
-      .then((d) => {
-        const days = d.summary.perDay.map((x) => `${x.day} ${x.count}次/${x.tokens}tok`).join("；");
-        setUsage(`次数 ${d.summary.count} · in ${d.summary.tokensIn} · out ${d.summary.tokensOut}${days ? ` · ${days}` : ""}`);
-      })
-      .catch(() => undefined);
-    apiGet<{ skills: Array<{ id: string; name: string; builtin?: boolean }> }>("/api/skills")
-      .then((d) => setCustomSkills(d.skills.filter((s) => !s.builtin)))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(MODEL_KEY, model);
-  }, [model]);
-
+  useEffect(() => { localStorage.setItem(MODEL_KEY, model); }, [model]);
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
     applyTheme(theme);
   }, [theme]);
+  useEffect(() => { applyFontSize(fontSize); }, [fontSize]);
+
+  async function changeRequestLog(next: boolean) {
+    if (savingLog) return;
+    const previous = requestLog;
+    setSavingLog(true);
+    setRequestLog(next);
+    setError(null);
+    try {
+      await apiSend("/api/settings", "PATCH", { requestLog: next });
+    } catch (err) {
+      setRequestLog(previous);
+      setError(err instanceof Error ? err.message : "无法保存设置");
+    } finally {
+      setSavingLog(false);
+    }
+  }
+
+  async function createSkill(event: FormEvent) {
+    event.preventDefault();
+    if (savingSkill || !skillName.trim() || !skillPrompt.trim()) return;
+    setSavingSkill(true);
+    setError(null);
+    try {
+      await apiSend("/api/skills", "POST", {
+        name: skillName.trim(), persona: skillPersona, defaultRefs: skillRefs, prompt: skillPrompt
+      });
+      setSkillName("");
+      setSkillPersona("");
+      setSkillRefs("");
+      setSkillPrompt("");
+      const result = await apiGet<{ skills: Skill[] }>("/api/skills");
+      setCustomSkills(result.skills.filter((skill) => !skill.builtin));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "无法新增技能");
+    } finally {
+      setSavingSkill(false);
+    }
+  }
 
   return (
-    <div className="settings">
-      <h1>设置</h1>
-      <p>
-        <Link to="/">返回工作台</Link>
-      </p>
-      {loadError ? <p className="warn">{loadError}</p> : null}
-      {data ? (
-        <div className="kv">
-          <span>API Key</span>
-          <span className={data.keyConfigured ? undefined : "warn"}>
-            {data.keyConfigured ? "已配置（仅服务端）" : data.keyError?.error}
-          </span>
-          <span>默认模型</span>
-          <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="默认模型">
-            {MODEL_OPTIONS.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <span>主题</span>
-          <select
-            value={theme}
-            onChange={(e) => setTheme(parseTheme(e.target.value))}
-            aria-label="主题"
-          >
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
-          </select>
-        </div>
-      ) : null}
-      <h2>用量</h2>
-      <p className="hint">{usage || "暂无用量"}</p>
-      <label className="hint">
-        <input
-          type="checkbox"
-          checked={requestLog}
-          onChange={async (e) => {
-            const next = e.target.checked;
-            setRequestLog(next);
-            await apiSend("/api/settings", "PATCH", { requestLog: next });
-          }}
-        />{" "}
-        记录请求日志
-      </label>
-      <h2>自定义技能</h2>
-      <form
-        className="stack"
-        onSubmit={async (e: FormEvent) => {
-          e.preventDefault();
-          await apiSend("/api/skills", "POST", {
-            name: skillName,
-            persona: skillPersona,
-            defaultRefs: skillRefs,
-            prompt: skillPrompt
-          });
-          setSkillName("");
-          setSkillPersona("");
-          setSkillRefs("");
-          setSkillPrompt("");
-          const d = await apiGet<{ skills: Array<{ id: string; name: string; builtin?: boolean }> }>("/api/skills");
-          setCustomSkills(d.skills.filter((s) => !s.builtin));
-        }}
-      >
-        <input value={skillName} onChange={(e) => setSkillName(e.target.value)} placeholder="技能名称" required />
-        <input value={skillPersona} onChange={(e) => setSkillPersona(e.target.value)} placeholder="人设" />
-        <input value={skillRefs} onChange={(e) => setSkillRefs(e.target.value)} placeholder="默认引用" />
-        <input value={skillPrompt} onChange={(e) => setSkillPrompt(e.target.value)} placeholder="提示词" required />
-        <button className="btn btn-primary" type="submit">
-          新增技能
-        </button>
-      </form>
-      {customSkills.map((s) => (
-        <div key={s.id} className="hint">
-          {s.name}{" "}
-          <button
-            type="button"
-            className="btn"
-            onClick={async () => {
-              await apiSend(`/api/skills/${s.id}`, "DELETE");
-              setCustomSkills((prev) => prev.filter((x) => x.id !== s.id));
-            }}
-          >
-            删除
-          </button>
-        </div>
-      ))}
-      <h2>快捷键</h2>
-      <div className="kv">
-        {SHORTCUTS.map((s) => (
-          <span key={s.keys} style={{ display: "contents" }}>
-            <span>{s.keys}</span>
-            <span>{s.action}</span>
-          </span>
-        ))}
+    <div className="settings-page">
+      <header className="settings-topbar">
+        <Link to="/" className="gpt-icon" title="返回工作台" aria-label="返回工作台"><ArrowLeft size={18} /></Link>
+        <Command size={18} /><Link to="/">工作台</Link><span>偏好设置</span>
+      </header>
+      <div className="settings-inner">
+        <div className="settings-header"><h1>设置</h1></div>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <section className="settings-section" aria-labelledby="general-title">
+          <h2 id="general-title"><Cpu size={18} />模型与连接</h2>
+          <div className="settings-row">
+            <span>API 连接</span>
+            <span className={`connection-status ${data ? data.keyConfigured ? "ok" : "warn" : ""}`} title={data?.keyError?.error}>
+              {data ? data.keyConfigured ? <><CheckCircle2 />已配置</> : <><CircleAlert />未配置 API Key</> : <><LoaderCircle className="spin" />正在读取</>}
+            </span>
+          </div>
+          <div className="settings-row">
+            <label htmlFor="default-model">默认模型</label>
+            <select id="default-model" value={model} onChange={(event) => setModel(event.target.value)}>
+              {MODEL_OPTIONS.map((option) => <option key={option} value={option}>{option.replace("grok-", "Grok ")}</option>)}
+            </select>
+          </div>
+        </section>
+        <section className="settings-section" aria-labelledby="appearance-title">
+          <h2 id="appearance-title"><Palette size={18} />外观</h2>
+          <div className="settings-row">
+            <span>主题</span>
+            <div className="theme-control" role="group" aria-label="主题">
+              <button type="button" aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={15} />浅色</button>
+              <button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon size={15} />深色</button>
+            </div>
+          </div>
+          <div className="settings-row">
+            <label htmlFor="font-size">字号</label>
+            <input id="font-size" type="number" min={12} max={22} step={1} value={fontSize} onChange={(event) => setFontSize(parseFontSize(event.target.value))} />
+          </div>
+        </section>
+        <section className="settings-section" aria-labelledby="usage-title">
+          <h2 id="usage-title"><Activity size={18} />用量</h2>
+          <div className="usage-metrics">
+            <div><span>请求次数</span><strong>{usage?.count.toLocaleString() ?? "--"}</strong></div>
+            <div><span>输入 Token</span><strong>{usage?.tokensIn.toLocaleString() ?? "--"}</strong></div>
+            <div><span>输出 Token</span><strong>{usage?.tokensOut.toLocaleString() ?? "--"}</strong></div>
+          </div>
+          {usage && usage.perDay.length > 0 && <table className="usage-history">
+            <thead><tr><th scope="col">日期</th><th scope="col">请求次数</th><th scope="col">Token</th></tr></thead>
+            <tbody>{usage.perDay.map((day) => <tr key={day.day}><td>{day.day}</td><td>{day.count.toLocaleString()}</td><td>{day.tokens.toLocaleString()}</td></tr>)}</tbody>
+          </table>}
+          <div className="settings-row">
+            <label htmlFor="request-log">记录请求日志</label>
+            <label className="toggle">
+              <input id="request-log" type="checkbox" checked={requestLog} disabled={!data || savingLog} onChange={(event) => void changeRequestLog(event.target.checked)} />
+              <span className="toggle-track" />
+            </label>
+          </div>
+        </section>
+        <section className="settings-section" aria-labelledby="skills-title">
+          <h2 id="skills-title"><Sparkles size={18} />自定义技能</h2>
+          {customSkills.map((skill) => <div key={skill.id} className="custom-skill-row">
+            <Sparkles size={16} /><span>{skill.name}</span>
+            <button type="button" className="gpt-icon btn-danger" title={`删除 ${skill.name}`} aria-label={`删除 ${skill.name}`} disabled={deletingSkill !== null} onClick={async () => {
+              setDeletingSkill(skill.id);
+              setError(null);
+              try {
+                await apiSend(`/api/skills/${skill.id}`, "DELETE");
+                setCustomSkills((previous) => previous.filter((item) => item.id !== skill.id));
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "无法删除技能");
+              } finally { setDeletingSkill(null); }
+            }}>{deletingSkill === skill.id ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}</button>
+          </div>)}
+          <form className="stack skill-form" onSubmit={(event) => void createSkill(event)}>
+            <label>技能名称<input value={skillName} onChange={(event) => setSkillName(event.target.value)} placeholder="例如：代码审查" required /></label>
+            <label>角色<input value={skillPersona} onChange={(event) => setSkillPersona(event.target.value)} placeholder="例如：资深工程师" /></label>
+            <label className="full-width">默认引用<input value={skillRefs} onChange={(event) => setSkillRefs(event.target.value)} placeholder="@规则" /></label>
+            <label className="full-width">提示词<textarea value={skillPrompt} onChange={(event) => setSkillPrompt(event.target.value)} placeholder="输入技能提示词" required /></label>
+            <button className="btn btn-primary full-width" type="submit" disabled={savingSkill || !skillName.trim() || !skillPrompt.trim()}>
+              {savingSkill ? <LoaderCircle size={15} className="spin" /> : <Plus size={15} />}{savingSkill ? "正在保存" : "新增技能"}
+            </button>
+          </form>
+        </section>
       </div>
     </div>
   );

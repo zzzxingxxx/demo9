@@ -21,13 +21,15 @@ export function prepareRun(command: string, confirm: unknown): string {
   return cmd;
 }
 
-export async function runCommand(
+export async function spawnProjectCommand(
   cwd: string,
   command: string,
-  confirm: unknown,
   timeoutMs = 15000
 ): Promise<{ cwd: string; command: string; output: string }> {
-  const cmd = prepareRun(command, confirm);
+  const cmd = command.trim();
+  if (!cmd) {
+    throw Object.assign(new Error("命令不能为空"), { code: "EMPTY_COMMAND", error: "命令不能为空" });
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, {
       cwd,
@@ -59,4 +61,14 @@ export async function runCommand(
       resolve({ cwd, command: cmd, output: output || `(exit ${code ?? 0})` });
     });
   });
+}
+
+export async function runCommand(
+  cwd: string,
+  command: string,
+  confirm: unknown,
+  timeoutMs = 15000
+): Promise<{ cwd: string; command: string; output: string }> {
+  const cmd = prepareRun(command, confirm);
+  return spawnProjectCommand(cwd, cmd, timeoutMs);
 }

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { applyUnifiedDiff } from "@wb/shared";
 import { resolveInside, toPosix } from "./paths.js";
 
 export const IGNORE_DIR_NAMES = new Set(["node_modules", ".git", "dist", "data", ".next"]);
@@ -43,6 +44,26 @@ export async function readProjectFile(root: string, rel: string): Promise<string
   const stat = await fs.stat(target);
   if (!stat.isFile()) throw Object.assign(new Error("不是文件"), { code: "NOT_FILE", error: "不是文件" });
   return fs.readFile(target, "utf8");
+}
+
+export async function readProjectFileOrEmpty(root: string, rel: string): Promise<string> {
+  try {
+    return await readProjectFile(root, rel);
+  } catch {
+    return "";
+  }
+}
+
+export async function applyDiffToProject(
+  root: string,
+  rel: string,
+  diff: string,
+  confirm: unknown
+): Promise<string> {
+  const before = await readProjectFileOrEmpty(root, rel);
+  const after = applyUnifiedDiff(before, diff);
+  await writeProjectFile(root, rel, after, confirm);
+  return after;
 }
 
 const CONTENT_TYPES: Record<string, string> = {

@@ -4,9 +4,10 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { extractText, getDocumentProxy } from "unpdf";
 import type { Db } from "./db/index.js";
+import { sqlClient } from "./db/index.js";
 import { knowledge, knowledgeVectors, type KnowledgeDoc } from "./db/schema.js";
 import { pathError } from "./paths.js";
-import { searchKnowledgeFts, type SourceCard } from "./fts.js";
+import { assembleSourceCards, searchKnowledgeFts, snippetAround, tokenizeQuery, type SourceCard } from "./fts.js";
 import { citationOffsets, embedText, rankByEmbedding } from "./vector.js";
 
 export function sliceText(text: string, maxChars = 1200): string[] {
@@ -73,7 +74,59 @@ export async function getKnowledge(db: Db, id: string): Promise<KnowledgeDoc | u
   return rows[0];
 }
 
+export async function upsertKnowledgeFts(db: Db, doc: KnowledgeDoc): Promise<void> {
+  const client = sqlClient(db);
+  if (!client) return;
+  try {
+    await client.execute({
+      sql: "DELETE FROM knowledge_fts WHERE doc_id = ?",
+      args: [doc.id]
+    });
+    await client.execute({
+      sql: "INSERT INTO knowledge_fts (title, tags, body, project_id, doc_id) VALUES (?, ?, ?, ?, ?)",
+      args: [doc.title, doc.tags, doc.text, doc.projectId, doc.id]
+    });
+  } catch {
+    /* FTS5 may be unavailable */
+  }
+}
+
+export async function searchKnowledgeFtsSql(
+  db: Db,
+  projectId: string,
+  query: string
+): Promise<SourceCard[] | null> {
+  const client = sqlClient(db);
+  if (!client) return null;
+  const tokens = tokenizeQuery(query)
+    .map((t) => t.replace(/"/g, ""))
+    .filter(Boolean);
+  if (tokens.length === 0) return [];
+  const match = tokens.map((t) => `"${t}"`).join(" AND ");
+  try {
+    const result = await client.execute({
+      sql: "SELECT doc_id AS id, title, body AS text FROM knowledge_fts WHERE knowledge_fts MATCH ? AND project_id = ?",
+      args: [match, projectId]
+    });
+    const rows = result.rows as unknown as Array<{ id: string; title: string; text: string }>;
+    return assembleSourceCards(
+      rows.map((r) => ({
+        id: String(r.id),
+        title: String(r.title ?? ""),
+        tags: "",
+        text: String(r.text ?? ""),
+        score: 1,
+        snippet: snippetAround(String(r.text ?? r.title ?? ""), query)
+      }))
+    );
+  } catch {
+    return null;
+  }
+}
+
 export async function searchProjectKnowledge(db: Db, projectId: string, query: string): Promise<SourceCard[]> {
+  const viaSql = await searchKnowledgeFtsSql(db, projectId, query);
+  if (viaSql && viaSql.length > 0) return viaSql;
   const docs = await listKnowledge(db, projectId);
   return searchKnowledgeFts(docs, query);
 }
@@ -124,6 +177,7 @@ export async function addKnowledge(
     createdAt: Date.now()
   };
   await db.insert(knowledge).values(row);
+  await upsertKnowledgeFts(db, row);
   const chunks = sliceText(input.text, 800);
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i] ?? "";

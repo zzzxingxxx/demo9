@@ -100,6 +100,7 @@ export const scheduledTasks = sqliteTable("scheduled_tasks", {
   lastRun: integer("last_run"),
   action: text("action").notNull(),
   payload: text("payload").notNull().default(""),
+  lastResult: text("last_result").notNull().default(""),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at").notNull()
 });

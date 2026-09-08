@@ -88,6 +88,7 @@ const CREATE_SQL = [
   last_run INTEGER,
   action TEXT NOT NULL,
   payload TEXT NOT NULL DEFAULT '',
+  last_result TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );`,
@@ -111,7 +112,8 @@ const CREATE_SQL = [
 const ALTER_SQL = [
   "ALTER TABLE sessions ADD COLUMN parent_id TEXT",
   "ALTER TABLE sessions ADD COLUMN branch_from TEXT",
-  "ALTER TABLE messages ADD COLUMN starred INTEGER NOT NULL DEFAULT 0"
+  "ALTER TABLE messages ADD COLUMN starred INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE scheduled_tasks ADD COLUMN last_result TEXT NOT NULL DEFAULT ''"
 ];
 
 export function sqliteUrlFromPath(filePath: string): string {
@@ -119,7 +121,13 @@ export function sqliteUrlFromPath(filePath: string): string {
   return `file:${abs}`;
 }
 
-export async function openDb(filePath: string): Promise<{ db: Db; close: () => void }> {
+const clients = new WeakMap<Db, Client>();
+
+export function sqlClient(db: Db): Client | null {
+  return clients.get(db) ?? singletonClient;
+}
+
+export async function openDb(filePath: string): Promise<{ db: Db; close: () => void; client: Client }> {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const client = createClient({ url: sqliteUrlFromPath(filePath) });
   for (const sql of CREATE_SQL) {
@@ -136,9 +144,15 @@ export async function openDb(filePath: string): Promise<{ db: Db; close: () => v
       /* column already present on existing files */
     }
   }
+  const db = drizzle(client, { schema });
+  clients.set(db, client);
   return {
-    db: drizzle(client, { schema }),
-    close: () => client.close()
+    db,
+    client,
+    close: () => {
+      clients.delete(db);
+      client.close();
+    }
   };
 }
 
@@ -149,7 +163,7 @@ export async function getDb(): Promise<Db> {
   const filePath = path.isAbsolute(raw) ? raw : path.resolve(base, raw);
   const opened = await openDb(filePath);
   singleton = opened.db;
-  singletonClient = null;
+  singletonClient = opened.client;
   return singleton;
 }
 

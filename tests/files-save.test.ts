@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listTree, readProjectFile, searchTreeByName, shouldIgnore, writeProjectFile } from "../server/src/lib/files.ts";
+import { applyDiffToProject, listTree, readProjectFile, searchTreeByName, shouldIgnore, writeProjectFile } from "../server/src/lib/files.ts";
+import { createUnifiedDiff } from "../shared/src/diff.ts";
 import { resolveInside } from "../server/src/lib/paths.ts";
 
 describe("file tree and save", () => {
@@ -52,5 +53,18 @@ describe("file tree and save", () => {
     const hits = searchTreeByName(tree, "ENV");
     expect(hits.map((h) => h.rel)).toEqual(["lib/env.ts"]);
     expect(searchTreeByName(tree, "nope")).toEqual([]);
+  });
+
+  it("applyDiffToProject treats a missing file as empty before", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wb-newfile-"));
+    clean.push(root);
+    const after = "export const n = 1\n";
+    const diff = createUnifiedDiff("src/new.ts", "", after);
+    await expect(applyDiffToProject(root, "src/new.ts", diff, false)).rejects.toMatchObject({
+      code: "CONFIRM_REQUIRED"
+    });
+    const written = await applyDiffToProject(root, "src/new.ts", diff, true);
+    expect(written).toBe(after);
+    expect(await fs.readFile(path.join(root, "src", "new.ts"), "utf8")).toBe(after);
   });
 });

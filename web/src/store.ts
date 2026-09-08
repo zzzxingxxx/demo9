@@ -1,5 +1,24 @@
 import { create } from "zustand";
+import { parseFontSize } from "@wb/shared";
 import type { Project, RulesPayload } from "./api";
+
+export const KNOWLEDGE_TAB_PREFIX = "knowledge:";
+const FONT_KEY = "wb.fontSize";
+
+export function knowledgeTabPath(id: string, title: string): string {
+  return `${KNOWLEDGE_TAB_PREFIX}${id}:${title}`;
+}
+
+export function isKnowledgeTab(path: string): boolean {
+  return path.startsWith(KNOWLEDGE_TAB_PREFIX);
+}
+
+export function knowledgeTabLabel(path: string): string {
+  if (!isKnowledgeTab(path)) return path;
+  const rest = path.slice(KNOWLEDGE_TAB_PREFIX.length);
+  const idx = rest.indexOf(":");
+  return idx >= 0 ? rest.slice(idx + 1) : rest;
+}
 
 export type FileTab = {
   path: string;
@@ -21,6 +40,41 @@ export type TreeNode = {
   children?: TreeNode[];
 };
 
+export type SidebarPanel =
+  | "project"
+  | "session"
+  | "files"
+  | "knowledge"
+  | "search"
+  | "git"
+  | "terminal"
+  | "web"
+  | "agent"
+  | "schedule"
+  | "mcp"
+  | "bundle";
+
+const SIDEBAR_KEY = "wb.sidebarPanel";
+const COLLAPSE_KEY = "wb.sidebarCollapsed";
+
+function parseSidebarPanel(value: string | null): SidebarPanel {
+  const allowed: SidebarPanel[] = [
+    "project",
+    "session",
+    "files",
+    "knowledge",
+    "search",
+    "git",
+    "terminal",
+    "web",
+    "agent",
+    "schedule",
+    "mcp",
+    "bundle"
+  ];
+  return allowed.includes(value as SidebarPanel) ? (value as SidebarPanel) : "project";
+}
+
 type State = {
   projects: Project[];
   currentId: string | null;
@@ -33,6 +87,11 @@ type State = {
   activePath: string | null;
   pendingDiff: PendingDiff | null;
   citeDraft: string | null;
+  skillId: string;
+  fontSize: number;
+  sidebarPanel: SidebarPanel;
+  sidebarCollapsed: boolean;
+  rightPanel: SidebarPanel | "canvas" | null;
   setProjects: (projects: Project[]) => void;
   setCurrentId: (id: string | null) => void;
   setSessionId: (id: string | null) => void;
@@ -47,6 +106,11 @@ type State = {
   setActivePath: (path: string | null) => void;
   setPendingDiff: (diff: PendingDiff | null) => void;
   setCiteDraft: (cite: string | null) => void;
+  setSkillId: (id: string) => void;
+  setFontSize: (size: number) => void;
+  setSidebarPanel: (panel: SidebarPanel) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setRightPanel: (panel: SidebarPanel | "canvas" | null) => void;
 };
 
 const persistKey = "wb.currentProject";
@@ -63,6 +127,11 @@ export const useWorkbench = create<State>((set) => ({
   activePath: null,
   pendingDiff: null,
   citeDraft: null,
+  skillId: "",
+  fontSize: parseFontSize(localStorage.getItem(FONT_KEY)),
+  sidebarPanel: parseSidebarPanel(localStorage.getItem(SIDEBAR_KEY)),
+  sidebarCollapsed: localStorage.getItem(COLLAPSE_KEY) === "1",
+  rightPanel: null,
   setProjects: (projects) => set({ projects }),
   setCurrentId: (id) => {
     set((s) => {
@@ -82,7 +151,8 @@ export const useWorkbench = create<State>((set) => ({
       const exists = s.tabs.some((t) => t.path === tab.path);
       return {
         tabs: exists ? s.tabs : [...s.tabs, tab],
-        activePath: tab.path
+        activePath: tab.path,
+        rightPanel: "canvas"
       };
     }),
   setTabContent: (path, content) =>
@@ -100,6 +170,25 @@ export const useWorkbench = create<State>((set) => ({
       return { tabs, activePath };
     }),
   setActivePath: (path) => set({ activePath: path }),
-  setPendingDiff: (pendingDiff) => set({ pendingDiff }),
-  setCiteDraft: (citeDraft) => set({ citeDraft })
+  setPendingDiff: (pendingDiff) =>
+    set((s) => ({
+      pendingDiff,
+      rightPanel: pendingDiff ? "canvas" : s.rightPanel
+    })),
+  setCiteDraft: (citeDraft) => set({ citeDraft }),
+  setSkillId: (skillId) => set({ skillId }),
+  setFontSize: (size) => {
+    const fontSize = parseFontSize(size);
+    localStorage.setItem(FONT_KEY, String(fontSize));
+    set({ fontSize });
+  },
+  setSidebarPanel: (sidebarPanel) => {
+    localStorage.setItem(SIDEBAR_KEY, sidebarPanel);
+    set({ sidebarPanel, rightPanel: sidebarPanel });
+  },
+  setSidebarCollapsed: (sidebarCollapsed) => {
+    localStorage.setItem(COLLAPSE_KEY, sidebarCollapsed ? "1" : "0");
+    set({ sidebarCollapsed });
+  },
+  setRightPanel: (rightPanel) => set({ rightPanel })
 }));

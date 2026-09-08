@@ -25,5 +25,8 @@ describe("read-only model tools", () => {
     const tools = workbenchTools(root);
     expect(Object.keys(tools).sort()).toEqual(["fetch_page", "list_dir", "read_file", "web_search"]);
     expect(Object.keys(tools)).not.toContain("write_file");
+    expect(Object.keys(tools)).not.toContain("mcp_call");
+    const withMcp = workbenchTools(root, [{ name: "demo", command: "echo", args: [] }]);
+    expect(Object.keys(withMcp)).toContain("mcp_call");
   });
 });

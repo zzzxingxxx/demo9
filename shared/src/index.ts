@@ -7,4 +7,5 @@ export type ApiErrorBody = {
 };
 
 export * from "./diff.js";
+export * from "./markdown.js";
 export * from "./settings.js";

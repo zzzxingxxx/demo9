@@ -5,7 +5,17 @@ import { useWorkbench } from "../store";
 type ContentHit = { rel: string; line: number; text: string };
 type GitEntry = { path: string; index: string; working_dir: string };
 type AgentItem = { path: string; after: string };
-type Task = { id: string; title: string; intervalMs: number; nextRun: number; lastRun: number | null; enabled: boolean };
+type Task = {
+  id: string;
+  title: string;
+  intervalMs: number;
+  nextRun: number;
+  lastRun: number | null;
+  enabled: boolean;
+  action?: string;
+  payload?: string;
+  lastResult?: string;
+};
 type McpServer = { id: string; name: string; command: string; args: string[]; enabled: boolean };
 
 export function ContentSearchPanel() {
@@ -250,6 +260,8 @@ export function SchedulePanel() {
   const { currentId, setNotice } = useWorkbench();
   const [title, setTitle] = useState("");
   const [intervalMs, setIntervalMs] = useState("60000");
+  const [action, setAction] = useState("log");
+  const [payload, setPayload] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
 
   async function reload() {
@@ -274,9 +286,11 @@ export function SchedulePanel() {
               projectId: currentId,
               title,
               intervalMs: Number(intervalMs) || 60000,
-              action: "log"
+              action,
+              payload
             });
             setTitle("");
+            setPayload("");
             await reload();
           } catch (err) {
             setNotice(err instanceof Error ? err.message : "创建失败");
@@ -285,6 +299,15 @@ export function SchedulePanel() {
       >
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="任务标题" />
         <input value={intervalMs} onChange={(e) => setIntervalMs(e.target.value)} placeholder="间隔毫秒" />
+        <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="任务动作">
+          <option value="log">记录</option>
+          <option value="run">运行命令</option>
+        </select>
+        <input
+          value={payload}
+          onChange={(e) => setPayload(e.target.value)}
+          placeholder={action === "run" ? "要运行的命令" : "可选备注"}
+        />
         <button className="btn btn-primary" type="submit" disabled={!title.trim()}>
           新建定时任务
         </button>
@@ -301,7 +324,8 @@ export function SchedulePanel() {
       </button>
       {tasks.map((t) => (
         <div key={t.id} className="hint">
-          {t.title} · {t.intervalMs}ms · next {new Date(t.nextRun).toLocaleString()}
+          {t.title} · {t.action || "log"} · {t.intervalMs}ms · next {new Date(t.nextRun).toLocaleString()}
+          {t.lastResult ? ` · ${t.lastResult.slice(0, 80)}` : ""}
         </div>
       ))}
     </div>

@@ -1,5 +1,6 @@
 import { streamText, stepCountIs } from "ai";
 import { createXai } from "@ai-sdk/xai";
+import type { McpConfig } from "../mcp.js";
 import type { ChatTurn } from "./assemble.js";
 import { webTools, workbenchTools } from "./tools.js";
 
@@ -16,10 +17,12 @@ export function streamWorkbenchChat(opts: {
   abortSignal?: AbortSignal;
   rootPath?: string | null;
   images?: ChatImage[];
+  mcpServers?: McpConfig[];
   onFinish?: (text: string, usage?: { tokensIn: number; tokensOut: number }) => Promise<void>;
 }) {
   const xai = createXai({ apiKey: opts.apiKey });
-  const tools = opts.rootPath ? workbenchTools(opts.rootPath) : webTools();
+  const mcp = opts.mcpServers ?? [];
+  const tools = opts.rootPath ? workbenchTools(opts.rootPath, mcp) : webTools(mcp);
   const images = opts.images ?? [];
   const messages =
     images.length === 0

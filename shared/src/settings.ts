@@ -6,6 +6,14 @@ export function parseTheme(value: string | null | undefined): ThemeName {
   return value === "dark" ? "dark" : "light";
 }
 
+export const DEFAULT_FONT_SIZE = 13;
+
+export function parseFontSize(value: string | number | null | undefined): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_FONT_SIZE;
+  return Math.min(22, Math.max(12, Math.round(n)));
+}
+
 export const SHORTCUTS = [
   { keys: "Ctrl+K", action: "打开命令面板" },
   { keys: "Esc", action: "关闭命令面板" },

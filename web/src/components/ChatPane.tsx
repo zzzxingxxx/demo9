@@ -1,7 +1,32 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  ArrowUp,
+  ArrowDown,
+  ArrowUpRight,
+  Check,
+  Code2,
+  Command,
+  Copy,
+  FileText,
+  Folder,
+  FolderOpen,
+  BookOpen,
+  Lightbulb,
+  LoaderCircle,
+  Paperclip,
+  X,
+  GitBranch,
+  ImagePlus,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Square,
+  Star
+} from "lucide-react";
 import { createUnifiedDiff, extractCodeBlocks } from "@wb/shared";
 import { apiGet, apiSend } from "../api";
-import { useWorkbench } from "../store";
+import { MarkdownBody } from "../lib/markdown";
+import { knowledgeTabPath, useWorkbench } from "../store";
 
 export type Session = {
   id: string;
@@ -19,101 +44,16 @@ type ChatMessage = {
 
 type SourceCard = { id: string; title: string; snippet: string; score: number };
 
-export function SessionsPanel() {
-  const { currentId, sessionId, setSessionId, setNotice } = useWorkbench();
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [q, setQ] = useState("");
+const SUGGESTIONS = [
+  { title: "梳理项目结构", icon: Code2, prompt: "请帮我梳理当前项目的结构，介绍主要模块，并给出下一步建议。" },
+  { title: "润色一段文字", icon: FileText, prompt: "请帮我润色下面的文字，保留原意，让表达更清晰自然：\n\n" },
+  { title: "制定行动计划", icon: Lightbulb, prompt: "我有一个想法，请和我一起把它拆解成可执行的步骤：\n\n" }
+];
 
-  async function reload() {
-    if (!currentId) return;
-    const data = await apiGet<{ sessions: Session[] }>(
-      `/api/sessions?projectId=${encodeURIComponent(currentId)}&q=${encodeURIComponent(q)}`
-    );
-    setSessions(data.sessions);
-    if (!sessionId && data.sessions[0]) setSessionId(data.sessions[0].id);
-  }
-
-  useEffect(() => {
-    reload().catch((err: unknown) => setNotice(err instanceof Error ? err.message : "无法加载会话"));
-  }, [currentId, q]);
-
-  if (!currentId) return <p className="hint">先选择项目。</p>;
-
-  return (
-    <div>
-      <div className="stack">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索会话" />
-        <button
-          className="btn"
-          type="button"
-          onClick={async () => {
-            const created = await apiSend<{ session: Session }>("/api/sessions", "POST", {
-              projectId: currentId
-            });
-            setSessionId(created.session.id);
-            await reload();
-          }}
-        >
-          新会话
-        </button>
-      </div>
-      {sessions.map((s) => (
-        <div key={s.id} className={s.id === sessionId ? "session-row active" : "session-row"}>
-          <button type="button" className="list-btn" onClick={() => setSessionId(s.id)}>
-            {s.pinned ? "★ " : ""}
-            {s.title}
-            {s.archived ? "（归档）" : ""}
-          </button>
-          <span className="row-actions">
-            <button
-              type="button"
-              onClick={async () => {
-                const title = window.prompt("会话名称", s.title);
-                if (!title) return;
-                await apiSend(`/api/sessions/${s.id}`, "PATCH", { title });
-                await reload();
-              }}
-            >
-              改名
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await apiSend(`/api/sessions/${s.id}`, "PATCH", { pinned: !s.pinned });
-                await reload();
-              }}
-            >
-              置顶
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await apiSend(`/api/sessions/${s.id}`, "PATCH", { archived: !s.archived });
-                await reload();
-              }}
-            >
-              归档
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const data = await apiGet<{ markdown: string }>(`/api/sessions/${s.id}/export`);
-                await navigator.clipboard.writeText(data.markdown);
-                setNotice("已复制 Markdown");
-              }}
-            >
-              导出
-            </button>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function ChatPane() {
+export function ChatPane({ onCreateProject }: { onCreateProject: () => void }) {
   const {
     currentId,
+    projects,
     sessionId,
     setSessionId,
     setNotice,
@@ -123,16 +63,35 @@ export function ChatPane() {
     setPendingDiff,
     citeDraft,
     setCiteDraft,
-    openTab
+    openTab,
+    skillId,
+    setSkillId
   } = useWorkbench();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [skills, setSkills] = useState<Array<{ id: string; name: string }>>([]);
-  const [skillId, setSkillId] = useState("");
   const [sourceCards, setSourceCards] = useState<SourceCard[]>([]);
   const [images, setImages] = useState<Array<{ mimeType: string; dataBase64: string }>>([]);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [loading, setLoading] = useState(Boolean(sessionId));
+  const [copied, setCopied] = useState<string | null>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const requestSessionRef = useRef<string | null>(null);
+  const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const followTailRef = useRef(true);
+  const empty = messages.length === 0 && !loading;
+  const model = (localStorage.getItem("wb.model") || "grok-4.5").replace("grok-", "Grok ");
+  const currentProject = projects.find((project) => project.id === currentId);
+
+  function resizeDraft() {
+    const el = draftRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }
 
   useEffect(() => {
     if (!citeDraft) return;
@@ -140,9 +99,13 @@ export function ChatPane() {
     setCiteDraft(null);
   }, [citeDraft, setCiteDraft]);
 
+  useEffect(() => {
+    resizeDraft();
+  }, [draft]);
+
   async function loadMessages(id: string) {
     const data = await apiGet<{ messages: ChatMessage[] }>(`/api/sessions/${id}/messages`);
-    setMessages(data.messages);
+    if (useWorkbench.getState().sessionId === id) setMessages(data.messages);
   }
 
   useEffect(() => {
@@ -152,21 +115,65 @@ export function ChatPane() {
   }, []);
 
   useEffect(() => {
+    if (abortRef.current && requestSessionRef.current === sessionId) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
+    setSourceCards([]);
+    followTailRef.current = true;
+    setShowScrollDown(false);
+    let cancelled = false;
     if (!sessionId) {
       setMessages([]);
+      setLoading(false);
       return;
     }
-    loadMessages(sessionId).catch((err: unknown) =>
-      setNotice(err instanceof Error ? err.message : "无法加载消息")
-    );
+    setLoading(true);
+    setMessages([]);
+    apiGet<{ messages: ChatMessage[] }>(`/api/sessions/${sessionId}/messages`)
+      .then((data) => { if (!cancelled) setMessages(data.messages); })
+      .catch((err: unknown) => { if (!cancelled) setNotice(err instanceof Error ? err.message : "无法加载消息"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [sessionId, setNotice]);
 
-  async function send(content: string, truncateFromMessageId?: string) {
-    if (!currentId || !content.trim() || streaming) return;
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (followTailRef.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  async function send(
+    content: string,
+    truncateFromMessageId?: string,
+    regenerateFromMessageId?: string
+  ) {
+    if (!currentId || streaming) return;
+    const isRegen = Boolean(regenerateFromMessageId);
+    if (!isRegen && !content.trim()) return;
     const ac = new AbortController();
     abortRef.current = ac;
+    requestSessionRef.current = sessionId;
+    followTailRef.current = true;
+    const previousMessages = messages;
+    let receivedContent = false;
+    setNotice(null);
+    setSourceCards([]);
     setStreaming(true);
-    setMessages((prev) => [...prev, { role: "user", content }, { role: "assistant", content: "" }]);
+    setMessages((prev) => {
+      if (isRegen && regenerateFromMessageId) {
+        const idx = prev.findIndex((m) => m.id === regenerateFromMessageId);
+        const base = idx >= 0 ? prev.slice(0, idx) : prev;
+        return [...base, { role: "assistant", content: "" }];
+      }
+      return [...prev, { role: "user", content }, { role: "assistant", content: "" }];
+    });
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -176,16 +183,20 @@ export function ChatPane() {
           projectId: currentId,
           sessionId,
           model: localStorage.getItem("wb.model") || undefined,
-          content,
+          content: isRegen ? undefined : content,
           skillId: skillId || undefined,
           truncateFromMessageId,
-          images: images.length ? images : undefined
+          regenerateFromMessageId,
+          images: isRegen || images.length === 0 ? undefined : images
         })
       });
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
         throw new Error(body.error || `HTTP ${res.status}`);
       }
+      if (abortRef.current !== ac || ac.signal.aborted) return;
+      setImages([]);
+      setPlusOpen(false);
       const cardsHeader = res.headers.get("x-source-cards");
       if (cardsHeader) {
         try {
@@ -195,7 +206,10 @@ export function ChatPane() {
         }
       }
       const newId = res.headers.get("x-session-id");
-      if (newId && newId !== sessionId) setSessionId(newId);
+      if (newId && newId !== sessionId) {
+        requestSessionRef.current = newId;
+        setSessionId(newId);
+      }
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) throw new Error("无流式响应");
@@ -203,7 +217,9 @@ export function ChatPane() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (abortRef.current !== ac || ac.signal.aborted) return;
         acc += decoder.decode(value, { stream: true });
+        receivedContent = true;
         const snapshot = acc;
         setMessages((prev) => {
           const next = [...prev];
@@ -212,104 +228,149 @@ export function ChatPane() {
           return next;
         });
       }
-      if (newId) await loadMessages(newId);
+      if (abortRef.current === ac && newId) await loadMessages(newId);
     } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") return;
+      if (abortRef.current !== ac || (err as { name?: string }).name === "AbortError") return;
+      if (!receivedContent) {
+        setMessages(previousMessages);
+        if (!isRegen) setDraft((value) => value || content);
+      }
       setNotice(err instanceof Error ? err.message : "发送失败");
     } finally {
-      setStreaming(false);
-      abortRef.current = null;
+      if (abortRef.current === ac) {
+        setStreaming(false);
+        abortRef.current = null;
+      }
     }
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!currentId || streaming || loading || !draft.trim()) return;
     const content = draft;
     setDraft("");
     void send(content);
   }
 
   return (
-    <>
-      <div className="chat-log">
-        {messages.length === 0 ? (
-          <p className="hint">从这里开始：写周报、读文档提问、或起草方案。引用文件请用 @。</p>
-        ) : (
-          messages.map((m, i) => (
-            <article key={m.id || i} className={`bubble ${m.role}`}>
-              <header>
-                {m.role === "user" ? "用户" : "助手"}
-                {m.starred ? " ★" : ""}
-                <span className="row-actions">
-                {m.id ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={async () => {
-                      await apiSend(`/api/messages/${m.id}/star`, "POST", { starred: !m.starred });
-                      if (sessionId) await loadMessages(sessionId);
-                    }}
-                  >
-                    {m.starred ? "取消收藏" : "收藏"}
-                  </button>
-                ) : null}
-                {m.id && sessionId ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={async () => {
-                      const created = await apiSend<{ session: Session }>("/api/sessions/" + sessionId + "/branch", "POST", {
-                        messageId: m.id
-                      });
-                      setSessionId(created.session.id);
-                    }}
-                  >
-                    从此分支
-                  </button>
-                ) : null}
-                {m.role === "user" && m.id ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      const next = window.prompt("编辑后重发", m.content);
-                      if (next) void send(next, m.id);
-                    }}
-                  >
-                    编辑重发
-                  </button>
-                ) : null}
-                </span>
-              </header>
-              <pre>{m.content}</pre>
-              {m.role === "assistant"
-                ? extractCodeBlocks(m.content).map((block, bi) => (
-                    <button
-                      key={bi}
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        const tab = tabs.find((t) => t.path === activePath);
-                        if (!tab || !activePath) {
-                          setNotice("先打开一个文件再应用到画布");
-                          return;
-                        }
-                        setPendingDiff({
-                          path: activePath,
-                          before: tab.original,
-                          after: block.code,
-                          diff: createUnifiedDiff(activePath, tab.original, block.code)
-                        });
-                      }}
-                    >
-                      应用到画布
-                    </button>
-                  ))
-                : null}
-            </article>
-          ))
-        )}
+    <section className={empty ? "gpt-chat is-empty" : "gpt-chat"} aria-label="对话">
+      <div className="gpt-scroll" ref={scrollRef} onScroll={() => {
+        const element = scrollRef.current;
+        if (!element) return;
+        const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+        followTailRef.current = nearBottom;
+        setShowScrollDown(!nearBottom);
+      }}>
+        <div className="gpt-col">
+          {loading ? <div className="chat-loading" role="status"><LoaderCircle size={22} className="spin" /><span>正在加载对话…</span></div> : empty ? (
+            <div className="welcome">
+              <span className="welcome-mark"><Command size={30} strokeWidth={1.5} /></span>
+              <span className="welcome-eyebrow">AI 工作台</span>
+              <h1 className="gpt-hello">今天，想完成什么？</h1>
+              <p className="welcome-context"><Folder size={14} /><span>{currentProject?.name || "尚未选择项目"}</span></p>
+              {!currentId && <button type="button" className="btn btn-primary welcome-create" onClick={onCreateProject}><Plus size={16} />创建第一个项目</button>}
+            </div>
+          ) : (
+            messages.map((m, i) => (
+              <article key={m.id || i} className={`msg ${m.role}`}>
+                <div className="msg-card">
+                  {m.role === "assistant" && <div className="message-author"><Command size={15} /><span>工作台</span></div>}
+                  {m.role === "assistant" && !m.content ? <div className="thinking" role="status">{streaming ? <><span /><span /><span /><small>正在思考</small></> : <small>已停止生成</small>}</div> : <MarkdownBody text={m.content} />}
+                  {m.role === "assistant"
+                    ? extractCodeBlocks(m.content).map((block, bi) => (
+                        <button
+                          key={bi}
+                          type="button"
+                          className="gpt-apply"
+                          onClick={() => {
+                            const tab = tabs.find((t) => t.path === activePath);
+                            if (!tab || !activePath) {
+                              setNotice("先打开一个文件再应用到画布");
+                              return;
+                            }
+                            setPendingDiff({
+                              path: activePath,
+                              before: tab.original,
+                              after: block.code,
+                              diff: createUnifiedDiff(activePath, tab.original, block.code)
+                            });
+                          }}
+                        >
+                          应用到画布
+                        </button>
+                      ))
+                    : null}
+                  <div className="msg-actions">
+                    {m.content && <button type="button" title={copied === (m.id || String(i)) ? "已复制" : "复制内容"} aria-label={copied === (m.id || String(i)) ? "已复制" : "复制内容"} onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(m.content);
+                        setCopied(m.id || String(i));
+                      } catch { setNotice("无法复制，请检查剪贴板权限"); }
+                    }}>{copied === (m.id || String(i)) ? <Check size={14} /> : <Copy size={14} />}</button>}
+                    {m.id ? (
+                      <button
+                        type="button"
+                        title={m.starred ? "取消收藏" : "收藏"}
+                        aria-label={m.starred ? "取消收藏" : "收藏"}
+                        onClick={async () => {
+                          await apiSend(`/api/messages/${m.id}/star`, "POST", { starred: !m.starred });
+                          if (sessionId) await loadMessages(sessionId);
+                        }}
+                      >
+                        <Star size={14} fill={m.starred ? "currentColor" : "none"} />
+                      </button>
+                    ) : null}
+                    {m.id && sessionId ? (
+                      <button
+                        type="button"
+                        title="从此分支"
+                        aria-label="从此分支"
+                        onClick={async () => {
+                          const created = await apiSend<{ session: Session }>(
+                            "/api/sessions/" + sessionId + "/branch",
+                            "POST",
+                            { messageId: m.id }
+                          );
+                          setSessionId(created.session.id);
+                        }}
+                      >
+                        <GitBranch size={14} />
+                      </button>
+                    ) : null}
+                    {m.role === "user" && m.id ? (
+                      <button
+                        type="button"
+                        title="编辑重发"
+                        aria-label="编辑重发"
+                        onClick={() => {
+                          const next = window.prompt("编辑后重发", m.content);
+                          if (next) void send(next, m.id);
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    ) : null}
+                    {m.role === "assistant" && m.id && !streaming ? (
+                      <button
+                        type="button"
+                        title="重新生成"
+                        aria-label="重新生成"
+                        onClick={() => void send("", undefined, m.id)}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
       </div>
+      {showScrollDown && !empty && <button type="button" className="scroll-to-bottom" aria-label="回到最新消息" onClick={() => {
+        followTailRef.current = true;
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      }}><ArrowDown size={16} />最新消息</button>}
       {sourceCards.length > 0 ? (
         <div className="source-row">
           {sourceCards.map((card) => (
@@ -322,7 +383,7 @@ export function ChatPane() {
                   `/api/knowledge/${card.id}`
                 );
                 openTab({
-                  path: `.knowledge/${data.knowledge.title}`,
+                  path: knowledgeTabPath(card.id, data.knowledge.title),
                   content: data.knowledge.text,
                   original: data.knowledge.text
                 });
@@ -334,78 +395,118 @@ export function ChatPane() {
           ))}
         </div>
       ) : null}
-      <form className="composer" onSubmit={onSubmit}>
-        <div className="at-bar" aria-label="引用">
-          <button
-            type="button"
-            className="btn"
-            disabled={!activePath}
-            onClick={() => {
-              if (activePath) setDraft((d) => `${d} @文件 ${activePath} `.trimStart());
-            }}
-          >
-            @文件
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={tree.length === 0}
-            onClick={() => setDraft((d) => `${d} @文件夹 . `.trimStart())}
-          >
-            @文件夹
-          </button>
-          <button type="button" className="btn" onClick={() => setDraft((d) => `${d} @知识 `.trimStart())}>
-            @知识
-          </button>
-          <button type="button" className="btn" onClick={() => setDraft((d) => `${d} @规则 `.trimStart())}>
-            @规则
-          </button>
-        </div>
-        <select value={skillId} onChange={(e) => setSkillId(e.target.value)} aria-label="技能">
-          <option value="">无技能</option>
-          {skills.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <input
-          type="file"
-          accept="image/*"
-          aria-label="看图"
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const buf = await file.arrayBuffer();
-            const bytes = new Uint8Array(buf);
-            let binary = "";
-            bytes.forEach((b) => {
-              binary += String.fromCharCode(b);
-            });
-            setImages([{ mimeType: file.type || "image/png", dataBase64: btoa(binary) }]);
-          }}
-        />
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-              e.preventDefault();
-              onSubmit(e);
-            }
-          }}
-          placeholder="输入消息，用 @文件 @文件夹 @知识 @规则 引用"
-        />
-        {streaming ? (
-          <button className="btn" type="button" onClick={() => abortRef.current?.abort()}>
-            停止
-          </button>
-        ) : (
-          <button className="btn btn-primary" type="submit">
-            发送
-          </button>
-        )}
-      </form>
-    </>
+      <div className="gpt-dock">
+        <form className="gpt-col gpt-box" onSubmit={onSubmit}>
+          {images.length > 0 && <div className="attachment-list">{images.map((image, index) => <div className="attachment-chip" key={index}>
+            <img src={`data:${image.mimeType};base64,${image.dataBase64}`} alt={`待发送图片 ${index + 1}`} /><span>图片 {index + 1}</span><button className="gpt-icon" type="button" aria-label={`移除图片 ${index + 1}`} disabled={streaming} onClick={() => setImages((previous) => previous.filter((_, item) => item !== index))}><X size={14} /></button>
+          </div>)}</div>}
+          {plusOpen ? (
+            <div id="composer-references" className="at-bar" aria-label="引用">
+              <button
+                type="button"
+                className="btn"
+                disabled={!activePath}
+                onClick={() => {
+                  if (activePath) setDraft((d) => `${d} @文件 ${activePath} `.trimStart());
+                }}
+              >
+                <FileText size={14} />文件
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={tree.length === 0}
+                onClick={() => setDraft((d) => `${d} @文件夹 . `.trimStart())}
+              >
+                <FolderOpen size={14} />文件夹
+              </button>
+              <button type="button" className="btn" onClick={() => setDraft((d) => `${d} @知识 `.trimStart())}>
+                <BookOpen size={14} />知识
+              </button>
+              <button type="button" className="btn" onClick={() => setDraft((d) => `${d} @规则 `.trimStart())}>
+                <Command size={14} />规则
+              </button>
+              <select value={skillId} onChange={(e) => setSkillId(e.target.value)} aria-label="技能">
+                <option value="">无技能</option>
+                {skills.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <label className="gpt-icon" title="看图">
+                <ImagePlus size={16} />
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="image/*"
+                  aria-label="看图"
+                  disabled={streaming}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = "";
+                    try {
+                      const bytes = new Uint8Array(await file.arrayBuffer());
+                      let binary = "";
+                      bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+                      setImages([{ mimeType: file.type || "image/png", dataBase64: btoa(binary) }]);
+                    } catch { setNotice("无法读取图片，请重新选择"); }
+                  }}
+                />
+              </label>
+            </div>
+          ) : null}
+          <div className="gpt-box-main">
+            <textarea
+              ref={draftRef}
+              value={draft}
+              aria-label="消息输入框"
+              disabled={!currentId}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                  e.preventDefault();
+                  onSubmit(e);
+                }
+              }}
+              placeholder={currentId ? "说说你想做什么，或添加文件作为参考…" : "创建项目后，开始你的第一段对话"}
+              rows={2}
+            />
+          </div>
+          <div className="composer-toolbar">
+            <button type="button" className={plusOpen ? "composer-attach is-on" : "composer-attach"} title="添加引用或图片" aria-label="添加引用或图片" aria-expanded={plusOpen} aria-controls="composer-references" disabled={!currentId} onClick={() => setPlusOpen((value) => !value)}>
+              <Paperclip size={18} />
+            </button>
+            <div className="composer-toolbar-end">
+              {skillId && <span className="active-skill">{skills.find((skill) => skill.id === skillId)?.name}</span>}
+              <span className="model-badge">{model}</span>
+            {streaming ? (
+              <button className="gpt-send" type="button" title="停止" aria-label="停止" onClick={() => abortRef.current?.abort()}>
+                <Square size={12} />
+              </button>
+            ) : (
+              <button
+                className="gpt-send"
+                type="submit"
+                title="发送"
+                aria-label="发送"
+                disabled={!draft.trim() || !currentId || loading}
+              >
+                <ArrowUp size={19} />
+              </button>
+            )}
+            </div>
+          </div>
+        </form>
+        {empty && currentId && <div className="gpt-col quick-start">
+          <div className="suggestion-grid">{SUGGESTIONS.map((suggestion) => <button key={suggestion.title} className="suggestion" type="button" onClick={() => {
+            setDraft((value) => value.trim() ? `${suggestion.prompt}\n\n${value}` : suggestion.prompt);
+            draftRef.current?.focus();
+          }}><suggestion.icon size={18} strokeWidth={1.7} /><span>{suggestion.title}</span><ArrowUpRight size={14} className="suggestion-arrow" /></button>)}</div>
+        </div>}
+        <div className="composer-status" role="status">{streaming ? <><LoaderCircle size={12} className="spin" />正在生成回答</> : <><span className="status-dot" />{currentId ? "当前项目已就绪" : "等待创建项目"}</>}</div>
+      </div>
+    </section>
   );
 }

@@ -2,11 +2,17 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getDb } from "../lib/db/index.js";
 import { publicError } from "../lib/env.js";
-import { applyUnifiedDiff } from "@wb/shared";
 import { searchProjectContents } from "../lib/contentSearch.js";
 import { extractDocumentText } from "../lib/knowledge.js";
 import { parseCsv, previewKind } from "../lib/preview.js";
-import { listTree, readProjectFile, readProjectFileBytes, searchTreeByName, writeProjectFile } from "../lib/files.js";
+import {
+  applyDiffToProject,
+  listTree,
+  readProjectFile,
+  readProjectFileBytes,
+  searchTreeByName,
+  writeProjectFile
+} from "../lib/files.js";
 import { getProject } from "../lib/projects.js";
 
 export const fileRoutes = new Hono();
@@ -144,9 +150,7 @@ fileRoutes.post("/api/files/apply-diff", async (c) => {
       })
       .parse(await c.req.json());
     const root = await boundRoot(body.projectId);
-    const before = await readProjectFile(root, body.path);
-    const after = applyUnifiedDiff(before, body.diff);
-    await writeProjectFile(root, body.path, after, body.confirm);
+    const after = await applyDiffToProject(root, body.path, body.diff, body.confirm);
     return c.json({ ok: true, path: body.path, content: after });
   } catch (err) {
     return c.json(publicError(err), 400);

@@ -8,6 +8,7 @@ import { getMissingKeyError, publicError, readModel } from "../lib/env.js";
 import { listTree, readProjectFile } from "../lib/files.js";
 import { formatSourceCardsPrompt } from "../lib/fts.js";
 import { attachKnowledgeSlices, listKnowledge, searchProjectKnowledge } from "../lib/knowledge.js";
+import { formatMcpServersPrompt, listMcpServers } from "../lib/mcp.js";
 import { getProject } from "../lib/projects.js";
 import { loadProjectRules } from "../lib/rules.js";
 import {
@@ -33,10 +34,11 @@ chatRoutes.post("/api/chat", async (c) => {
       .object({
         projectId: z.string().min(1),
         sessionId: z.string().optional(),
-        content: z.string().min(1),
+        content: z.string().optional(),
         model: z.string().optional(),
         skillId: z.string().optional(),
         truncateFromMessageId: z.string().optional(),
+        regenerateFromMessageId: z.string().optional(),
         images: z
           .array(z.object({ mimeType: z.string().min(1), dataBase64: z.string().min(1) }))
           .optional()
@@ -50,16 +52,25 @@ chatRoutes.post("/api/chat", async (c) => {
     let session = body.sessionId ? await getSession(db, body.sessionId) : undefined;
     if (!session) session = await createSession(db, body.projectId);
 
-    if (body.truncateFromMessageId) {
+    const isRegen = Boolean(body.regenerateFromMessageId);
+    if (body.regenerateFromMessageId) {
+      await truncateFrom(db, session.id, body.regenerateFromMessageId);
+    } else if (body.truncateFromMessageId) {
       await truncateFrom(db, session.id, body.truncateFromMessageId);
     }
 
     const extras = await listCustomSkills(db, body.projectId);
     const skill = body.skillId ? getSkill(body.skillId, extras) : undefined;
-    const packed = skill ? skillPromptAssembly(skill, body.content) : { skillPrompt: "", content: body.content };
-    await addMessage(db, session.id, "user", packed.content);
-    const title = ensureSessionTitle(session, body.content);
-    if (title !== session.title) await updateSession(db, session.id, { title });
+    const userText = (body.content || "").trim();
+    if (!isRegen && !userText) return c.json({ code: "INVALID", error: "内容不能为空" }, 400);
+    const packed = skill
+      ? skillPromptAssembly(skill, userText || " ")
+      : { skillPrompt: "", content: userText };
+    if (!isRegen) {
+      await addMessage(db, session.id, "user", packed.content);
+      const title = ensureSessionTitle(session, packed.content);
+      if (title !== session.title) await updateSession(db, session.id, { title });
+    }
 
     let rules = "";
     if (project.rootPath) {
@@ -70,7 +81,14 @@ chatRoutes.post("/api/chat", async (c) => {
       }
     }
 
-    const mentions = parseAtMentions(body.content);
+    const history = await listMessages(db, session.id);
+    const turns: ChatTurn[] = history.map((m) => ({
+      role: m.role as ChatTurn["role"],
+      content: m.content
+    }));
+    const queryText =
+      packed.content.trim() || [...history].reverse().find((m) => m.role === "user")?.content || "";
+    const mentions = parseAtMentions(queryText);
     const root = project.rootPath;
     const refs = await resolveChatRefs(mentions, {
       readFile: root ? (rel) => readProjectFile(root, rel) : undefined,
@@ -83,14 +101,22 @@ chatRoutes.post("/api/chat", async (c) => {
         return { title: name || "知识", content };
       }
     });
-
-    const history = await listMessages(db, session.id);
-    const turns: ChatTurn[] = history.map((m) => ({
-      role: m.role as ChatTurn["role"],
-      content: m.content
+    const cards = await searchProjectKnowledge(db, project.id, queryText);
+    const mcpRows = (await listMcpServers(db)).filter((s) => s.enabled);
+    const mcpServers = mcpRows.map((s) => ({
+      name: s.name,
+      command: s.command,
+      args: JSON.parse(s.argsJson) as string[]
     }));
-    const cards = await searchProjectKnowledge(db, project.id, packed.content);
-    const skillPrompt = [packed.skillPrompt, formatSourceCardsPrompt(cards)].filter(Boolean).join("\n\n");
+    const mcpPrompt = formatMcpServersPrompt(
+      mcpServers.map((s) => ({
+        name: s.name,
+        tools: [{ name: "mcp_call", description: "通过 mcp_call 调用此服务器上的工具" }]
+      }))
+    );
+    const skillPrompt = [packed.skillPrompt, formatSourceCardsPrompt(cards), mcpPrompt]
+      .filter(Boolean)
+      .join("\n\n");
     const system = assembleSystemPrompt({ rules, refs, skillPrompt });
     const messages = toModelMessages(system, turns);
 
@@ -100,7 +126,8 @@ chatRoutes.post("/api/chat", async (c) => {
       messages,
       abortSignal: c.req.raw.signal,
       rootPath: project.rootPath,
-      images: body.images,
+      images: isRegen ? undefined : body.images,
+      mcpServers,
       onFinish: async (text, usage) => {
         if (text.trim()) await addMessage(db, session.id, "assistant", text);
         await recordUsage(db, {
