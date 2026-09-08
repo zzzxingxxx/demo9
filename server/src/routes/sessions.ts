@@ -3,6 +3,8 @@ import { z } from "zod";
 import { exportSessionMarkdown } from "../lib/chat/assemble.js";
 import { getDb } from "../lib/db/index.js";
 import { publicError } from "../lib/env.js";
+import { and, eq, desc } from "drizzle-orm";
+import { messages, sessions } from "../lib/db/schema.js";
 import {
   branchSession,
   createSession,
@@ -15,10 +17,42 @@ import {
 
 export const sessionRoutes = new Hono();
 
+sessionRoutes.get("/api/messages/starred", async (c) => {
+  const db = await getDb();
+  const items = await db
+    .select({
+      id: messages.id,
+      sessionId: messages.sessionId,
+      title: sessions.title,
+      content: messages.content,
+      role: messages.role
+    })
+    .from(messages)
+    .innerJoin(sessions, eq(messages.sessionId, sessions.id))
+    .where(
+      and(
+        eq(sessions.projectId, c.req.query("projectId") || ""),
+        eq(messages.starred, true)
+      )
+    )
+    .orderBy(desc(messages.createdAt));
+  return c.json({ messages: items });
+});
+
+sessionRoutes.delete("/api/sessions/:id", async (c) => {
+  const db = await getDb();
+  await db.transaction(async (tx) => {
+    await tx.delete(messages).where(eq(messages.sessionId, c.req.param("id")));
+    await tx.delete(sessions).where(eq(sessions.id, c.req.param("id")));
+  });
+  return c.json({ ok: true });
+});
+
 sessionRoutes.get("/api/sessions", async (c) => {
   try {
     const projectId = c.req.query("projectId");
-    if (!projectId) return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
+    if (!projectId)
+      return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
     const db = await getDb();
     const items = await listSessions(db, projectId, c.req.query("q") || "");
     return c.json({ sessions: items });
@@ -29,7 +63,9 @@ sessionRoutes.get("/api/sessions", async (c) => {
 
 sessionRoutes.post("/api/sessions", async (c) => {
   try {
-    const body = z.object({ projectId: z.string().min(1), title: z.string().optional() }).parse(await c.req.json());
+    const body = z
+      .object({ projectId: z.string().min(1), title: z.string().optional() })
+      .parse(await c.req.json());
     const db = await getDb();
     const session = await createSession(db, body.projectId, body.title);
     return c.json({ session }, 201);
@@ -65,7 +101,9 @@ sessionRoutes.get("/api/sessions/:id/messages", async (c) => {
 
 sessionRoutes.post("/api/sessions/:id/branch", async (c) => {
   try {
-    const body = z.object({ messageId: z.string().min(1) }).parse(await c.req.json());
+    const body = z
+      .object({ messageId: z.string().min(1) })
+      .parse(await c.req.json());
     const db = await getDb();
     const session = await branchSession(db, c.req.param("id"), body.messageId);
     return c.json({ session }, 201);
@@ -92,7 +130,10 @@ sessionRoutes.get("/api/sessions/:id/export", async (c) => {
   const items = await listMessages(db, session.id);
   const markdown = exportSessionMarkdown(
     session.title,
-    items.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+    items.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content
+    }))
   );
   return c.json({ markdown });
 });

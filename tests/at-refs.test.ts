@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { assembleSystemPrompt } from "../server/src/lib/chat/assemble.ts";
-import { parseAtMentions, resolveChatRefs } from "../server/src/lib/chat/refs.ts";
+import {
+  parseAtMentions,
+  resolveChatRefs
+} from "../server/src/lib/chat/refs.ts";
 
 describe("@ mention context assembly", () => {
+  it("resolves quoted paths and the root folder", async () => {
+    const mentions = parseAtMentions('@文件 "docs/my notes.md" @文件夹 .');
+    expect(mentions[0]?.name).toBe("docs/my notes.md");
+    const refs = await resolveChatRefs(mentions, {
+      readFile: async () => "content",
+      listTree: async () => [{ name: "a.ts", rel: "a.ts", type: "file" }]
+    });
+    expect(refs[1]?.content).toBe("a.ts");
+  });
   it("parseAtMentions extracts file, folder, knowledge, and rules tokens", () => {
-    const text = "请看 @文件 src/app.ts 和 @文件夹 src，再对照 @知识 架构.md 与 @规则";
+    const text =
+      "请看 @文件 src/app.ts 和 @文件夹 src，再对照 @知识 架构.md 与 @规则";
     expect(parseAtMentions(text)).toEqual([
       { kind: "file", name: "src/app.ts" },
       { kind: "folder", name: "src" },
@@ -34,7 +47,9 @@ describe("@ mention context assembly", () => {
   });
 
   it("resolveChatRefs plus assembleSystemPrompt attaches @知识 without a project root", async () => {
-    const mentions = parseAtMentions("根据 @知识 笔记.md 总结，并忽略 @文件 src/a.ts");
+    const mentions = parseAtMentions(
+      "根据 @知识 笔记.md 总结，并忽略 @文件 src/a.ts"
+    );
     const refs = await resolveChatRefs(mentions, {
       loadKnowledge: async (name) => {
         expect(name).toBe("笔记.md");

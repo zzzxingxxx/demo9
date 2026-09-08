@@ -9,7 +9,8 @@ export type ChatTurn = {
   content: string;
 };
 
-export const DEFAULT_SYSTEM_PROMPT = "你是本机 AI 工作台助手。回答简洁、可执行，优先依据用户引用的文件与知识。";
+export const DEFAULT_SYSTEM_PROMPT =
+  "你是本机 AI 工作台助手。回答简洁、可执行，优先依据用户引用的文件与知识。";
 
 const KIND_LABEL: Record<ChatRef["kind"], string> = {
   file: "@文件",
@@ -34,8 +35,25 @@ export function assembleSystemPrompt(input: {
   return parts.join("\n\n");
 }
 
-export function toModelMessages(system: string, history: ChatTurn[]): ChatTurn[] {
-  return [{ role: "system", content: system }, ...history.filter((m) => m.content.trim())];
+export function toModelMessages(
+  system: string,
+  history: ChatTurn[],
+  maxChars = 48000
+): ChatTurn[] {
+  const systemBudget = Math.min(16000, Math.floor(maxChars / 3));
+  const boundedSystem = system.slice(0, systemBudget);
+  let remaining = maxChars - boundedSystem.length;
+  const kept: ChatTurn[] = [];
+  const valid = history.filter((m) => m.role !== "system" && m.content.trim());
+  for (let i = valid.length - 1; i >= 0; i--) {
+    const turn = valid[i]!;
+    if (turn.content.length > remaining && kept.length) break;
+    kept.unshift({ ...turn, content: turn.content.slice(-remaining) });
+    remaining -= kept[0]!.content.length;
+    if (remaining <= 0) break;
+  }
+  while (kept.length > 1 && kept[0]?.role === "assistant") kept.shift();
+  return [{ role: "system", content: boundedSystem }, ...kept];
 }
 
 export function titleFromPrompt(prompt: string): string {
@@ -43,7 +61,10 @@ export function titleFromPrompt(prompt: string): string {
   return line.slice(0, 40);
 }
 
-export function exportSessionMarkdown(title: string, history: ChatTurn[]): string {
+export function exportSessionMarkdown(
+  title: string,
+  history: ChatTurn[]
+): string {
   const blocks = [`# ${title}`, ""];
   for (const turn of history) {
     if (turn.role === "system") continue;
@@ -53,7 +74,10 @@ export function exportSessionMarkdown(title: string, history: ChatTurn[]): strin
   return blocks.join("\n");
 }
 
-export function matchSessionQuery<T extends { title: string }>(sessions: T[], query: string): T[] {
+export function matchSessionQuery<T extends { title: string }>(
+  sessions: T[],
+  query: string
+): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return sessions;
   return sessions.filter((s) => s.title.toLowerCase().includes(q));

@@ -85,6 +85,8 @@ export const mcpServers = sqliteTable("mcp_servers", {
   name: text("name").notNull(),
   command: text("command").notNull(),
   argsJson: text("args_json").notNull().default("[]"),
+  envJson: text("env_json").notNull().default("{}"),
+  allowedToolsJson: text("allowed_tools_json").notNull().default("[]"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at").notNull()
 });

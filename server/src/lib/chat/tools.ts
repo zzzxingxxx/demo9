@@ -1,41 +1,39 @@
-import { tool, type ToolSet } from "ai";
+import { jsonSchema, tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { listTree, readProjectFile } from "../files.js";
 import { callMcpTool, type McpConfig } from "../mcp.js";
 import { extractHtmlText, fetchUrlHtml, webSearch } from "../urlIngest.js";
 
-export async function executeReadFile(rootPath: string, rel: string): Promise<string> {
+export async function executeReadFile(
+  rootPath: string,
+  rel: string
+): Promise<string> {
   return readProjectFile(rootPath, rel);
 }
 
-export async function executeListDir(rootPath: string, rel = "."): Promise<string> {
+export async function executeListDir(
+  rootPath: string,
+  rel = "."
+): Promise<string> {
   const tree = await listTree(rootPath, rel);
-  return tree
-    .map((n) => (n.type === "dir" ? `${n.rel}/` : n.rel))
-    .join("\n");
+  return tree.map((n) => (n.type === "dir" ? `${n.rel}/` : n.rel)).join("\n");
 }
 
 export function mcpTools(servers: McpConfig[]): ToolSet {
-  if (servers.length === 0) return {};
-  return {
-    mcp_call: tool({
-      description: "调用已配置的 MCP 服务器工具。server 为 MCP 名称，name 为工具名，arguments 为参数对象。",
-      inputSchema: z.object({
-        server: z.string(),
-        name: z.string(),
-        arguments: z.record(z.unknown()).optional()
-      }),
-      execute: async ({ server, name, arguments: args }) => {
-        const cfg = servers.find((s) => s.name === server);
-        if (!cfg) return `未找到 MCP 服务器 ${server}`;
-        try {
-          return await callMcpTool(cfg, name, (args ?? {}) as Record<string, unknown>);
-        } catch (err) {
-          return err instanceof Error ? err.message : "MCP 调用失败";
-        }
-      }
+  const out: ToolSet = {};
+  servers.forEach((server, i) =>
+    server.tools?.forEach((entry, j) => {
+      if (!server.allowedTools?.includes(entry.name)) return;
+      out[`mcp_${i}_${j}`] = tool({
+        description: `${server.name} / ${entry.name}: ${entry.description}`,
+        inputSchema: jsonSchema<Record<string, unknown>>(
+          entry.inputSchema || { type: "object", properties: {} }
+        ),
+        execute: async (args) => callMcpTool(server, entry.name, args)
+      });
     })
-  };
+  );
+  return out;
 }
 
 export function webTools(servers: McpConfig[] = []): ToolSet {
@@ -58,7 +56,10 @@ export function webTools(servers: McpConfig[] = []): ToolSet {
   };
 }
 
-export function workbenchTools(rootPath: string, servers: McpConfig[] = []): ToolSet {
+export function workbenchTools(
+  rootPath: string,
+  servers: McpConfig[] = []
+): ToolSet {
   return {
     read_file: tool({
       description: "读取项目内一个文件的文本内容。只读。",
@@ -67,7 +68,9 @@ export function workbenchTools(rootPath: string, servers: McpConfig[] = []): Too
     }),
     list_dir: tool({
       description: "列出项目目录下的文件和子目录。只读。",
-      inputSchema: z.object({ path: z.string().optional().describe("相对目录，默认根") }),
+      inputSchema: z.object({
+        path: z.string().optional().describe("相对目录，默认根")
+      }),
       execute: async ({ path }) => executeListDir(rootPath, path || ".")
     }),
     ...webTools(servers)

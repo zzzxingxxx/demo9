@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { requireRunConfirm } from "./confirm.js";
 
 export type TerminalCiteInput = {
@@ -9,14 +9,19 @@ export type TerminalCiteInput = {
 
 export function packTerminalCite(input: TerminalCiteInput): string {
   const out = input.output.replace(/\s+$/, "");
-  return [`@终端 ${input.cwd}`, `$ ${input.command}`, out || "(无输出)"].join("\n");
+  return [`@终端 ${input.cwd}`, `$ ${input.command}`, out || "(无输出)"].join(
+    "\n"
+  );
 }
 
 export function prepareRun(command: string, confirm: unknown): string {
   requireRunConfirm(confirm);
   const cmd = command.trim();
   if (!cmd) {
-    throw Object.assign(new Error("命令不能为空"), { code: "EMPTY_COMMAND", error: "命令不能为空" });
+    throw Object.assign(new Error("命令不能为空"), {
+      code: "EMPTY_COMMAND",
+      error: "命令不能为空"
+    });
   }
   return cmd;
 }
@@ -25,17 +30,25 @@ export async function spawnProjectCommand(
   cwd: string,
   command: string,
   timeoutMs = 15000
-): Promise<{ cwd: string; command: string; output: string }> {
+): Promise<{ cwd: string; command: string; output: string; exitCode: number }> {
   const cmd = command.trim();
   if (!cmd) {
-    throw Object.assign(new Error("命令不能为空"), { code: "EMPTY_COMMAND", error: "命令不能为空" });
+    throw Object.assign(new Error("命令不能为空"), {
+      code: "EMPTY_COMMAND",
+      error: "命令不能为空"
+    });
   }
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, {
-      cwd,
-      shell: true,
-      windowsHide: true
-    });
+    const windows = process.platform === "win32";
+    const child = spawn(
+      windows ? "powershell.exe" : "/bin/sh",
+      windows ? ["-NoLogo", "-NoProfile", "-Command", cmd] : ["-c", cmd],
+      {
+        cwd,
+        detached: !windows,
+        windowsHide: true
+      }
+    );
     let output = "";
     const onData = (buf: Buffer) => {
       output += buf.toString("utf8");
@@ -44,7 +57,20 @@ export async function spawnProjectCommand(
     child.stdout?.on("data", onData);
     child.stderr?.on("data", onData);
     const timer = setTimeout(() => {
-      child.kill();
+      if (windows && child.pid)
+        execFile(
+          "taskkill",
+          ["/PID", String(child.pid), "/T", "/F"],
+          { windowsHide: true },
+          () => {}
+        );
+      else if (child.pid) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          child.kill();
+        }
+      }
       reject(
         Object.assign(new Error("命令超时"), {
           code: "TIMEOUT",
@@ -54,11 +80,21 @@ export async function spawnProjectCommand(
     }, timeoutMs);
     child.on("error", (err) => {
       clearTimeout(timer);
-      reject(Object.assign(new Error(err.message), { code: "RUN_FAILED", error: err.message }));
+      reject(
+        Object.assign(new Error(err.message), {
+          code: "RUN_FAILED",
+          error: err.message
+        })
+      );
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve({ cwd, command: cmd, output: output || `(exit ${code ?? 0})` });
+      resolve({
+        cwd,
+        command: cmd,
+        output: output || `(exit ${code ?? 0})`,
+        exitCode: code ?? -1
+      });
     });
   });
 }

@@ -113,7 +113,9 @@ const ALTER_SQL = [
   "ALTER TABLE sessions ADD COLUMN parent_id TEXT",
   "ALTER TABLE sessions ADD COLUMN branch_from TEXT",
   "ALTER TABLE messages ADD COLUMN starred INTEGER NOT NULL DEFAULT 0",
-  "ALTER TABLE scheduled_tasks ADD COLUMN last_result TEXT NOT NULL DEFAULT ''"
+  "ALTER TABLE scheduled_tasks ADD COLUMN last_result TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE mcp_servers ADD COLUMN env_json TEXT NOT NULL DEFAULT '{}'",
+  "ALTER TABLE mcp_servers ADD COLUMN allowed_tools_json TEXT NOT NULL DEFAULT '[]'"
 ];
 
 export function sqliteUrlFromPath(filePath: string): string {
@@ -127,21 +129,30 @@ export function sqlClient(db: Db): Client | null {
   return clients.get(db) ?? singletonClient;
 }
 
-export async function openDb(filePath: string): Promise<{ db: Db; close: () => void; client: Client }> {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const client = createClient({ url: sqliteUrlFromPath(filePath) });
+export async function openDb(
+  filePath: string
+): Promise<{ db: Db; close: () => void; client: Client }> {
+  if (filePath !== ":memory:")
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const client = createClient({
+    url: filePath === ":memory:" ? "file::memory:" : sqliteUrlFromPath(filePath)
+  });
   for (const sql of CREATE_SQL) {
     try {
       await client.execute(sql);
-    } catch {
-      /* FTS5 may already exist or be unavailable; other tables use IF NOT EXISTS */
+    } catch (err) {
+      if (
+        !sql.includes("VIRTUAL TABLE") ||
+        !String(err).includes("no such module")
+      )
+        throw err;
     }
   }
   for (const sql of ALTER_SQL) {
     try {
       await client.execute(sql);
-    } catch {
-      /* column already present on existing files */
+    } catch (err) {
+      if (!String(err).includes("duplicate column name")) throw err;
     }
   }
   const db = drizzle(client, { schema });
@@ -158,9 +169,11 @@ export async function openDb(filePath: string): Promise<{ db: Db; close: () => v
 
 export async function getDb(): Promise<Db> {
   if (singleton) return singleton;
-  const raw = process.env.DATABASE_URL?.replace(/^file:/, "") || "./data/app.db";
+  const raw =
+    process.env.DATABASE_URL?.replace(/^file:/, "") || "./data/app.db";
   const base = process.env.REPO_ROOT || process.cwd();
-  const filePath = path.isAbsolute(raw) ? raw : path.resolve(base, raw);
+  const filePath =
+    raw === ":memory:" || path.isAbsolute(raw) ? raw : path.resolve(base, raw);
   const opened = await openDb(filePath);
   singleton = opened.db;
   singletonClient = opened.client;

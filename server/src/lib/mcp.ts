@@ -1,82 +1,116 @@
-import { spawn } from "node:child_process";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Ajv } from "ajv";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db/index.js";
 import { mcpServers, type McpServerRow } from "./db/schema.js";
 import { pathError } from "./paths.js";
 
+export type McpTool = {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+};
 export type McpConfig = {
   name: string;
   command: string;
   args: string[];
+  env?: Record<string, string>;
+  allowedTools?: string[];
+  tools?: McpTool[];
+  error?: string;
 };
 
-export function parseMcpConfig(input: { name?: string; command?: string; args?: unknown }): McpConfig {
+export function parseMcpConfig(input: {
+  name?: string;
+  command?: string;
+  args?: unknown;
+  env?: Record<string, string>;
+  allowedTools?: string[];
+}): McpConfig {
   const name = (input.name || "").trim();
   const command = (input.command || "").trim();
-  if (!name || !command) {
-    throw Object.assign(new Error("MCP 需要名称和命令"), { code: "INVALID_MCP", error: "MCP 需要名称和命令" });
-  }
-  const args = Array.isArray(input.args) ? input.args.map((a) => String(a)) : [];
-  return { name, command, args };
+  if (!name || !command) throw pathError("INVALID_MCP", "MCP 需要名称和命令");
+  return {
+    name,
+    command,
+    args: Array.isArray(input.args) ? input.args.map(String) : [],
+    ...(input.env ? { env: input.env } : {}),
+    ...(input.allowedTools ? { allowedTools: input.allowedTools } : {})
+  };
 }
-
-export type McpTool = { name: string; description: string };
 
 export function toolsFromListResult(payload: unknown): McpTool[] {
   const root = payload as { tools?: unknown; result?: { tools?: unknown } };
-  const raw = Array.isArray(root.tools) ? root.tools : Array.isArray(root.result?.tools) ? root.result.tools : [];
-  const tools: McpTool[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as { name?: unknown; description?: unknown };
-    if (typeof rec.name !== "string" || !rec.name.trim()) continue;
-    tools.push({
-      name: rec.name.trim(),
-      description: typeof rec.description === "string" ? rec.description : ""
-    });
-  }
-  return tools;
+  const raw = Array.isArray(root.tools)
+    ? root.tools
+    : Array.isArray(root.result?.tools)
+      ? root.result.tools
+      : [];
+  return raw
+    .filter((t) => t && typeof t.name === "string" && t.name.trim())
+    .map((t) => ({
+      name: t.name.trim(),
+      description: typeof t.description === "string" ? t.description : "",
+      ...(t.inputSchema ? { inputSchema: t.inputSchema } : {})
+    }));
 }
 
-export function formatMcpToolsPrompt(tools: McpTool[], serverName?: string): string {
-  if (tools.length === 0) return "";
-  const head = serverName ? `可用 MCP 工具（${serverName}）：` : "可用 MCP 工具：";
-  return [head, ...tools.map((t) => `- ${t.name}: ${t.description || "(无说明)"}`)].join("\n");
+export function formatMcpToolsPrompt(
+  tools: McpTool[],
+  serverName?: string
+): string {
+  if (!tools.length) return "";
+  return [
+    `可用 MCP 工具${serverName ? `（${serverName}）` : ""}：`,
+    ...tools.map((t) => `- ${t.name}: ${t.description || "(无说明)"}`)
+  ].join("\n");
 }
 
-export function mcpJsonLine(id: number | null, method: string, params: unknown): string {
-  const body =
-    id === null
-      ? { jsonrpc: "2.0", method, params }
-      : { jsonrpc: "2.0", id, method, params };
-  return `${JSON.stringify(body)}\n`;
+export function mcpJsonLine(
+  id: number | null,
+  method: string,
+  params: unknown
+): string {
+  return (
+    JSON.stringify({
+      jsonrpc: "2.0",
+      ...(id === null ? {} : { id }),
+      method,
+      params
+    }) + "\n"
+  );
 }
 
 export function parseMcpToolCallResult(payload: unknown): string {
   const root = payload as {
-    result?: { content?: Array<{ type?: string; text?: string }> };
+    result?: unknown;
     error?: { message?: string };
+    content?: Array<{ text?: string }>;
   };
   if (root.error?.message) return root.error.message;
-  const content = root.result?.content;
-  if (Array.isArray(content)) {
-    const text = content.map((c) => (typeof c.text === "string" ? c.text : "")).filter(Boolean).join("\n");
-    if (text) return text;
-  }
-  if (root.result !== undefined) return JSON.stringify(root.result);
-  return JSON.stringify(payload);
+  const result = (root.result ?? root) as {
+    content?: Array<{ text?: string }>;
+  };
+  return (
+    result.content
+      ?.map((c) => c.text || "")
+      .filter(Boolean)
+      .join("\n") || JSON.stringify(result)
+  );
 }
 
 export function formatMcpServersPrompt(
-  servers: Array<{ name: string; tools: McpTool[]; error?: string }>
+  servers: Array<{ name: string; tools?: McpTool[]; error?: string }>
 ): string {
-  if (servers.length === 0) return "";
   return servers
-    .map((s) => {
-      if (s.error) return `MCP ${s.name}：${s.error}`;
-      return formatMcpToolsPrompt(s.tools, s.name) || `MCP ${s.name}：可用，通过 mcp_call 调用`;
-    })
+    .map((s) =>
+      s.error
+        ? `MCP ${s.name}：${s.error}`
+        : formatMcpToolsPrompt(s.tools || [], s.name)
+    )
+    .filter(Boolean)
     .join("\n");
 }
 
@@ -84,13 +118,28 @@ export async function listMcpServers(db: Db): Promise<McpServerRow[]> {
   return db.select().from(mcpServers);
 }
 
-export async function createMcpServer(db: Db, input: McpConfig): Promise<McpServerRow> {
+export function mcpConfigFromRow(row: McpServerRow): McpConfig {
+  return {
+    name: row.name,
+    command: row.command,
+    args: JSON.parse(row.argsJson),
+    env: JSON.parse(row.envJson),
+    allowedTools: JSON.parse(row.allowedToolsJson)
+  };
+}
+
+export async function createMcpServer(
+  db: Db,
+  input: McpConfig
+): Promise<McpServerRow> {
   const cfg = parseMcpConfig(input);
   const row: McpServerRow = {
     id: randomUUID(),
     name: cfg.name,
     command: cfg.command,
     argsJson: JSON.stringify(cfg.args),
+    envJson: JSON.stringify(cfg.env || {}),
+    allowedToolsJson: JSON.stringify(cfg.allowedTools || []),
     enabled: true,
     createdAt: Date.now()
   };
@@ -98,54 +147,97 @@ export async function createMcpServer(db: Db, input: McpConfig): Promise<McpServ
   return row;
 }
 
+export async function updateMcpServer(
+  db: Db,
+  id: string,
+  patch: Partial<McpConfig> & { enabled?: boolean }
+): Promise<void> {
+  const row = (await listMcpServers(db)).find((s) => s.id === id);
+  if (!row) throw pathError("NOT_FOUND", "MCP 不存在");
+  const cfg = parseMcpConfig({ ...mcpConfigFromRow(row), ...patch });
+  await db
+    .update(mcpServers)
+    .set({
+      name: cfg.name,
+      command: cfg.command,
+      argsJson: JSON.stringify(cfg.args),
+      envJson: JSON.stringify(cfg.env || {}),
+      allowedToolsJson: JSON.stringify(cfg.allowedTools || []),
+      enabled: patch.enabled ?? row.enabled
+    })
+    .where(eq(mcpServers.id, id));
+}
+
 export async function deleteMcpServer(db: Db, id: string): Promise<void> {
   await db.delete(mcpServers).where(eq(mcpServers.id, id));
 }
 
-export async function listMcpToolsFromProcess(config: McpConfig, timeoutMs = 5000): Promise<McpTool[]> {
+async function withMcp<T>(
+  config: McpConfig,
+  timeoutMs: number,
+  run: (client: Client, signal: AbortSignal) => Promise<T>
+): Promise<T> {
   const cfg = parseMcpConfig(config);
-  return new Promise((resolve, reject) => {
-    const child = spawn(cfg.command, cfg.args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
-    let buf = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(pathError("MCP_TIMEOUT", "MCP 列出工具超时"));
-    }, timeoutMs);
-    child.stdout?.on("data", (chunk: Buffer) => {
-      buf += chunk.toString("utf8");
-      const lines = buf.split(/\r?\n/);
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line) as { id?: number; result?: unknown };
-          if (parsed.id === 1) {
-            child.stdin?.write(mcpJsonLine(null, "notifications/initialized", {}));
-            child.stdin?.write(mcpJsonLine(2, "tools/list", {}));
-          } else if (parsed.id === 2) {
-            clearTimeout(timer);
-            child.kill();
-            resolve(toolsFromListResult(parsed));
-          }
-        } catch {
-          /* wait for more */
-        }
-      }
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(pathError("MCP_FAILED", err.message));
-    });
-    child.on("close", () => {
-      clearTimeout(timer);
-    });
-    child.stdin?.write(
-      mcpJsonLine(1, "initialize", {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "ai-workbench", version: "0.0.1" }
+  const client = new Client({ name: "ai-workbench", version: "1.0.0" });
+  const transport = new StdioClientTransport({
+    command: cfg.command,
+    args: cfg.args,
+    env: cfg.env,
+    stderr: "pipe"
+  });
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stderr = "";
+  transport.stderr?.on("data", (chunk) => {
+    stderr = (stderr + String(chunk)).slice(-2000);
+  });
+  try {
+    return await Promise.race([
+      (async () => {
+        await client.connect(transport, {
+          timeout: timeoutMs,
+          signal: controller.signal
+        });
+        return run(client, controller.signal);
+      })(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(pathError("MCP_TIMEOUT", "MCP 请求超时"));
+        }, timeoutMs);
       })
+    ]);
+  } catch (err) {
+    throw pathError(
+      "MCP_FAILED",
+      `${err instanceof Error ? err.message : "MCP 连接失败"}${stderr ? `: ${stderr.slice(-500)}` : ""}`
     );
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+    await client.close().catch(() => undefined);
+    await transport.close().catch(() => undefined);
+  }
+}
+
+export async function listMcpToolsFromProcess(
+  config: McpConfig,
+  timeoutMs = 8000
+): Promise<McpTool[]> {
+  return withMcp(config, timeoutMs, async (client, signal) => {
+    const tools: McpTool[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await client.listTools(
+        { cursor },
+        { signal, timeout: timeoutMs }
+      );
+      tools.push(...toolsFromListResult(result));
+      cursor = result.nextCursor;
+      if (tools.length > 1000)
+        throw pathError("MCP_LIMIT", "MCP 工具数量超出限制");
+    } while (cursor);
+    return tools;
   });
 }
 
@@ -153,54 +245,47 @@ export async function callMcpTool(
   config: McpConfig,
   toolName: string,
   args: Record<string, unknown> = {},
-  timeoutMs = 8000
+  timeoutMs = 15000
 ): Promise<string> {
-  const cfg = parseMcpConfig(config);
-  const name = toolName.trim();
-  if (!name) throw pathError("INVALID_MCP", "MCP 工具名不能为空");
-  return new Promise((resolve, reject) => {
-    const child = spawn(cfg.command, cfg.args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
-    let buf = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(pathError("MCP_TIMEOUT", "MCP 调用超时"));
-    }, timeoutMs);
-    child.stdout?.on("data", (chunk: Buffer) => {
-      buf += chunk.toString("utf8");
-      const lines = buf.split(/\r?\n/);
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const parsed = JSON.parse(line) as { id?: number; result?: unknown; error?: { message?: string } };
-          if (parsed.id === 1) {
-            child.stdin?.write(mcpJsonLine(null, "notifications/initialized", {}));
-            child.stdin?.write(
-              mcpJsonLine(2, "tools/call", { name, arguments: args })
-            );
-          } else if (parsed.id === 2) {
-            clearTimeout(timer);
-            child.kill();
-            resolve(parseMcpToolCallResult(parsed));
-          }
-        } catch {
-          /* wait for more */
-        }
-      }
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(pathError("MCP_FAILED", err.message));
-    });
-    child.on("close", () => {
-      clearTimeout(timer);
-    });
-    child.stdin?.write(
-      mcpJsonLine(1, "initialize", {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "ai-workbench", version: "0.0.1" }
-      })
+  if (!toolName.trim()) throw pathError("INVALID_MCP", "MCP 工具名不能为空");
+  return withMcp(config, timeoutMs, async (client, signal) => {
+    const result = await client.listTools({}, { signal, timeout: timeoutMs });
+    const target = result.tools.find((t) => t.name === toolName);
+    if (!target) throw pathError("NOT_FOUND", "MCP 工具不存在");
+    const validate = new Ajv({ strict: false }).compile(target.inputSchema);
+    if (!validate(args))
+      throw pathError(
+        "INVALID",
+        `参数不符合工具 schema: ${JSON.stringify(validate.errors)}`
+      );
+    const output = await client.callTool(
+      { name: toolName, arguments: args },
+      undefined,
+      { signal, timeout: timeoutMs }
     );
+    if (output.isError)
+      throw pathError("MCP_TOOL_ERROR", parseMcpToolCallResult(output));
+    return parseMcpToolCallResult(output);
   });
+}
+
+export async function discoverChatMcpServers(db: Db): Promise<McpConfig[]> {
+  const configs = (await listMcpServers(db))
+    .filter((s) => s.enabled)
+    .map(mcpConfigFromRow)
+    .filter((s) => s.allowedTools?.length);
+  return Promise.all(
+    configs.map(async (cfg) => {
+      try {
+        return {
+          ...cfg,
+          tools: (await listMcpToolsFromProcess(cfg)).filter((t) =>
+            cfg.allowedTools!.includes(t.name)
+          )
+        };
+      } catch {
+        return { ...cfg, tools: [], error: "连接失败，请在 MCP 面板检查配置" };
+      }
+    })
+  );
 }

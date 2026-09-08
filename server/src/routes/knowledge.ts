@@ -11,9 +11,13 @@ import {
   listKnowledge,
   parseTags,
   searchProjectKnowledge,
-  vectorSearchKnowledge
+  vectorSearchKnowledge,
+  updateKnowledge,
+  deleteKnowledge
 } from "../lib/knowledge.js";
 import { fetchUrlHtml, ingestUrlPayload } from "../lib/urlIngest.js";
+import { embeddingConfig } from "../lib/embeddings.js";
+import fs from "node:fs/promises";
 
 export const knowledgeRoutes = new Hono();
 
@@ -25,7 +29,8 @@ function storeDir(): string {
 knowledgeRoutes.get("/api/knowledge", async (c) => {
   try {
     const projectId = c.req.query("projectId");
-    if (!projectId) return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
+    if (!projectId)
+      return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
     const db = await getDb();
     const docs = await listKnowledge(db, projectId);
     return c.json({
@@ -46,10 +51,55 @@ knowledgeRoutes.get("/api/knowledge/search", async (c) => {
   try {
     const projectId = c.req.query("projectId");
     const q = c.req.query("q") || "";
-    if (!projectId) return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
+    if (!projectId)
+      return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
     const db = await getDb();
     const cards = await searchProjectKnowledge(db, projectId, q);
-    return c.json({ cards, query: q });
+    return c.json({
+      cards,
+      query: q,
+      mode: embeddingConfig() ? "semantic" : "keyword"
+    });
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
+});
+
+knowledgeRoutes.patch("/api/knowledge/:id", async (c) => {
+  try {
+    const body = z
+      .object({
+        title: z.string().trim().min(1).max(200),
+        tags: z.string(),
+        text: z.string().max(5000000)
+      })
+      .parse(await c.req.json());
+    return c.json({
+      knowledge: await updateKnowledge(await getDb(), c.req.param("id"), body)
+    });
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
+});
+
+knowledgeRoutes.delete("/api/knowledge/:id", async (c) => {
+  try {
+    const db = await getDb();
+    const doc = await getKnowledge(db, c.req.param("id"));
+    if (!doc) return c.json({ code: "NOT_FOUND", error: "知识不存在" }, 404);
+    await deleteKnowledge(db, doc.id);
+    await fs
+      .unlink(
+        path.join(
+          storeDir(),
+          doc.projectId,
+          `${doc.id}-${path.basename(doc.sourceName)}`
+        )
+      )
+      .catch((err) => {
+        if (err.code !== "ENOENT") throw err;
+      });
+    return c.json({ ok: true });
   } catch (err) {
     return c.json(publicError(err), 400);
   }
@@ -59,7 +109,8 @@ knowledgeRoutes.get("/api/knowledge/vector", async (c) => {
   try {
     const projectId = c.req.query("projectId");
     const q = c.req.query("q") || "";
-    if (!projectId) return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
+    if (!projectId)
+      return c.json({ code: "INVALID", error: "缺少 projectId" }, 400);
     const db = await getDb();
     const hits = await vectorSearchKnowledge(db, projectId, q);
     return c.json({ hits, query: q });
@@ -74,7 +125,9 @@ knowledgeRoutes.get("/api/knowledge/:id", async (c) => {
     const doc = await getKnowledge(db, c.req.param("id"));
     if (!doc) return c.json({ code: "NOT_FOUND", error: "知识不存在" }, 404);
     const q = c.req.query("q") || "";
-    const citation = q ? citationOffsets(doc.text, q) : { start: 0, end: 0, snippet: doc.text.slice(0, 80) };
+    const citation = q
+      ? citationOffsets(doc.text, q)
+      : { start: 0, end: 0, snippet: doc.text.slice(0, 80) };
     return c.json({ knowledge: doc, citation });
   } catch (err) {
     return c.json(publicError(err), 400);
@@ -92,7 +145,9 @@ knowledgeRoutes.post("/api/knowledge/url", async (c) => {
       .parse(await c.req.json());
     const html = await fetchUrlHtml(body.url);
     const ingested = ingestUrlPayload(body.url, html);
-    const safeTitle = (ingested.title || "page").replace(/[\\/:*?"<>|]/g, "_").slice(0, 60);
+    const safeTitle = (ingested.title || "page")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .slice(0, 60);
     const filename = safeTitle.endsWith(".md") ? safeTitle : `${safeTitle}.md`;
     const bytes = new TextEncoder().encode(ingested.text);
     const db = await getDb();
@@ -141,7 +196,10 @@ knowledgeRoutes.post("/api/knowledge", async (c) => {
       storeDir: storeDir(),
       bytes
     });
-    return c.json({ knowledge: { id: doc.id, title: doc.title, tags: doc.tags } }, 201);
+    return c.json(
+      { knowledge: { id: doc.id, title: doc.title, tags: doc.tags } },
+      201
+    );
   } catch (err) {
     return c.json(publicError(err), 400);
   }

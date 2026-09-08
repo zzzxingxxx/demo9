@@ -28,14 +28,18 @@ export function parseAgentPlan(markdown: string): AgentItem[] {
     const fenced = /```([^\n]*)\n([\s\S]*?)```/g;
     while ((match = fenced.exec(markdown))) {
       const meta = (match[1] ?? "").trim();
-      const path = meta.split(/\s+/).find((p) => p.includes("/") || p.includes(".")) ?? "";
+      const path =
+        meta.split(/\s+/).find((p) => p.includes("/") || p.includes(".")) ?? "";
       if (path) items.push({ path, after: match[2] ?? "" });
     }
   }
   return items;
 }
 
-export function previewAgentItem(current: string, item: AgentItem): AgentPreview {
+export function previewAgentItem(
+  current: string,
+  item: AgentItem
+): AgentPreview {
   return {
     path: item.path,
     before: current,
@@ -46,7 +50,11 @@ export function previewAgentItem(current: string, item: AgentItem): AgentPreview
   };
 }
 
-export function applyAgentItem(current: string, item: AgentItem, confirm: unknown): AgentPreview {
+export function applyAgentItem(
+  current: string,
+  item: AgentItem,
+  confirm: unknown
+): AgentPreview {
   const preview = previewAgentItem(current, item);
   return { ...preview, written: confirm === true };
 }
@@ -59,6 +67,6 @@ export async function commitAgentItem(
 ): Promise<AgentPreview> {
   const applied = applyAgentItem(current, item, confirm);
   if (!applied.written) return applied;
-  await writeProjectFile(root, applied.path, applied.content, true);
+  await writeProjectFile(root, applied.path, applied.content, true, current);
   return applied;
 }

@@ -6,10 +6,22 @@ import { app } from "./app.js";
 import { getDb } from "./lib/db/index.js";
 import { readListenHost, readListenPort } from "./lib/env.js";
 import { tickScheduledTasks } from "./lib/schedule.js";
+import { loadProviderSettings } from "./lib/providerSettings.js";
+import { closeProjectTerminals } from "./lib/terminalSessions.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../");
 config({ path: resolve(root, ".env") });
 process.env.REPO_ROOT = root;
+await loadProviderSettings(await getDb());
+process.on("exit", () => closeProjectTerminals());
+process.on("SIGINT", () => {
+  closeProjectTerminals();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  closeProjectTerminals();
+  process.exit(0);
+});
 
 const hostname = readListenHost(process.env);
 const port = readListenPort(process.env);

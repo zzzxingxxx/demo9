@@ -4,7 +4,6 @@ import { BrowserRouter } from "react-router-dom";
 import { parseFontSize, parseTheme } from "@wb/shared";
 import { App } from "./App";
 import { applyFontSize, applyTheme } from "./pages/SettingsPage";
-import "./monacoEnv";
 import "./styles.css";
 
 applyTheme(parseTheme(localStorage.getItem("wb.theme")));

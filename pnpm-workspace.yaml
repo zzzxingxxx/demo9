@@ -2,3 +2,6 @@ packages:
   - web
   - server
   - shared
+onlyBuiltDependencies:
+  - esbuild
+  - node-pty

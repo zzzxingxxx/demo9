@@ -1,9 +1,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db/index.js";
-import { projects, type Project } from "./db/schema.js";
+import {
+  projects,
+  sessions,
+  messages,
+  knowledge,
+  knowledgeVectors,
+  customSkills,
+  scheduledTasks,
+  usageEvents,
+  type Project
+} from "./db/schema.js";
+import { closeProjectTerminals } from "./terminalSessions.js";
 
 export type { Project };
 import { pathError } from "./paths.js";
@@ -34,16 +45,24 @@ export async function listProjects(db: Db): Promise<Project[]> {
   return db.select().from(projects);
 }
 
-export async function getProject(db: Db, id: string): Promise<Project | undefined> {
+export async function getProject(
+  db: Db,
+  id: string
+): Promise<Project | undefined> {
   const rows = await db.select().from(projects).where(eq(projects.id, id));
   return rows[0];
 }
 
-export async function createProject(db: Db, input: ProjectInput): Promise<Project> {
+export async function createProject(
+  db: Db,
+  input: ProjectInput
+): Promise<Project> {
   const name = input.name.trim();
   if (!name) throw pathError("NAME_REQUIRED", "项目名称不能为空");
   const now = Date.now();
-  const rootPath = input.rootPath ? await assertDirectory(input.rootPath) : null;
+  const rootPath = input.rootPath
+    ? await assertDirectory(input.rootPath)
+    : null;
   const row = {
     id: randomUUID(),
     name,
@@ -57,7 +76,11 @@ export async function createProject(db: Db, input: ProjectInput): Promise<Projec
   return row;
 }
 
-export async function updateProject(db: Db, id: string, input: Partial<ProjectInput>): Promise<Project> {
+export async function updateProject(
+  db: Db,
+  id: string,
+  input: Partial<ProjectInput>
+): Promise<Project> {
   const current = await getProject(db, id);
   if (!current) throw pathError("NOT_FOUND", "项目不存在");
   const name = input.name !== undefined ? input.name.trim() : current.name;
@@ -70,7 +93,10 @@ export async function updateProject(db: Db, id: string, input: Partial<ProjectIn
     ...current,
     name,
     rootPath,
-    description: input.description !== undefined ? input.description.trim() : current.description,
+    description:
+      input.description !== undefined
+        ? input.description.trim()
+        : current.description,
     archived: input.archived ?? current.archived,
     updatedAt: Date.now()
   };
@@ -79,7 +105,37 @@ export async function updateProject(db: Db, id: string, input: Partial<ProjectIn
 }
 
 export async function deleteProject(db: Db, id: string): Promise<void> {
-  await db.delete(projects).where(eq(projects.id, id));
+  if (!(await getProject(db, id))) throw pathError("NOT_FOUND", "项目不存在");
+  await db.transaction(async (tx) => {
+    const owned = tx
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.projectId, id));
+    await tx.delete(messages).where(inArray(messages.sessionId, owned));
+    await tx.delete(sessions).where(eq(sessions.projectId, id));
+    await tx.delete(knowledgeVectors).where(eq(knowledgeVectors.projectId, id));
+    await tx.delete(knowledge).where(eq(knowledge.projectId, id));
+    await tx.delete(customSkills).where(eq(customSkills.projectId, id));
+    await tx.delete(scheduledTasks).where(eq(scheduledTasks.projectId, id));
+    await tx.delete(usageEvents).where(eq(usageEvents.projectId, id));
+    await tx.run(sql`DELETE FROM knowledge_fts WHERE project_id = ${id}`);
+    await tx.delete(projects).where(eq(projects.id, id));
+  });
+  closeProjectTerminals(id);
+  const base = path.resolve(
+    process.env.REPO_ROOT || process.cwd(),
+    "data",
+    "knowledge"
+  );
+  const target = path.resolve(base, id);
+  const relative = path.relative(base, target);
+  if (
+    relative &&
+    !relative.startsWith("..") &&
+    !path.isAbsolute(relative) &&
+    !relative.includes(path.sep)
+  )
+    await fs.rm(target, { recursive: true, force: true });
 }
 
 export async function loadBoundRules(project: Project): Promise<RulesLoad> {

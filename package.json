@@ -9,9 +9,11 @@
     "dev:server": "pnpm --filter server dev",
     "build": "pnpm -r --filter shared --filter server --filter web run build",
     "lint": "pnpm -r --filter shared --filter server --filter web run lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

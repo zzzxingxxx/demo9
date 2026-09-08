@@ -1,5 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
+import { publicSettings } from "./lib/providerSettings.js";
+import { embeddingConfig } from "./lib/embeddings.js";
 import { getMissingKeyError, readModel } from "./lib/env.js";
 import { getSettingsMap } from "./lib/appSettings.js";
 import { getDb } from "./lib/db/index.js";
@@ -20,6 +23,28 @@ import { usageRoutes } from "./routes/usage.js";
 import { webRoutes } from "./routes/web.js";
 
 export const app = new Hono();
+
+app.use("/api/*", bodyLimit({ maxSize: 24 * 1024 * 1024 }));
+app.use("/api/*", async (c, next) => {
+  const origin = c.req.header("Origin");
+  if (origin) {
+    let allowed = false;
+    try {
+      const url = new URL(origin);
+      allowed =
+        url.protocol === "http:" &&
+        ["127.0.0.1", "localhost"].includes(url.hostname);
+    } catch {
+      /* invalid origin */
+    }
+    if (!allowed)
+      return c.json(
+        { code: "ORIGIN_DENIED", error: "仅允许本地工作台访问" },
+        403
+      );
+  }
+  await next();
+});
 
 app.use(
   "/api/*",
@@ -78,7 +103,12 @@ app.get("/api/settings", async (c) => {
     keyConfigured: keyError === null,
     keyError,
     requestLog: settings.requestLog === "1",
-    settings
+    settings: publicSettings(settings),
+    embedding: {
+      configured: Boolean(embeddingConfig()),
+      baseUrl: process.env.EMBEDDING_BASE_URL || "",
+      model: process.env.EMBEDDING_MODEL || "",
+      keyConfigured: Boolean(process.env.EMBEDDING_API_KEY)
+    }
   });
 });
-

@@ -2,7 +2,13 @@ import { File, Folder } from "lucide-react";
 import { apiGet } from "../api";
 import { useWorkbench, type TreeNode } from "../store";
 
-function NodeView({ node, onOpen }: { node: TreeNode; onOpen: (rel: string) => void }) {
+function NodeView({
+  node,
+  onOpen
+}: {
+  node: TreeNode;
+  onOpen: (rel: string) => void;
+}) {
   if (node.type === "dir") {
     return (
       <details open className="tree-dir">
@@ -18,7 +24,11 @@ function NodeView({ node, onOpen }: { node: TreeNode; onOpen: (rel: string) => v
     );
   }
   return (
-    <button type="button" className="list-btn tree-file" onClick={() => onOpen(node.rel)}>
+    <button
+      type="button"
+      className="list-btn tree-file"
+      onClick={() => onOpen(node.rel)}
+    >
       <File size={12} /> {node.name}
     </button>
   );
@@ -33,7 +43,10 @@ export function FileTree() {
       const data = await apiGet<{ path: string; content: string }>(
         `/api/files/content?projectId=${encodeURIComponent(currentId)}&path=${encodeURIComponent(rel)}`
       );
-      openTab({ path: data.path, content: data.content, original: data.content });
+      openTab(
+        { path: data.path, content: data.content, original: data.content },
+        currentId
+      );
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "打开失败");
     }
@@ -48,9 +61,13 @@ export function FileTree() {
           type="button"
           className="btn"
           onClick={() => {
-            apiGet<{ tree: TreeNode[] }>(`/api/files?projectId=${encodeURIComponent(currentId)}`)
+            apiGet<{ tree: TreeNode[] }>(
+              `/api/files?projectId=${encodeURIComponent(currentId)}`
+            )
               .then((d) => setTree(d.tree))
-              .catch((err: unknown) => setNotice(err instanceof Error ? err.message : "无法列出文件"));
+              .catch((err: unknown) =>
+                setNotice(err instanceof Error ? err.message : "无法列出文件")
+              );
           }}
         >
           刷新文件树

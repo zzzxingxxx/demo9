@@ -1,8 +1,16 @@
 import type { Db } from "./db/index.js";
 import { getSettingsMap, setSetting } from "./appSettings.js";
+import { publicSettings } from "./providerSettings.js";
 import { addKnowledge, listKnowledge } from "./knowledge.js";
 import { createProject, getProject } from "./projects.js";
-import { addMessage, createSession, listMessages, listSessions, starMessage, updateSession } from "./sessions.js";
+import {
+  addMessage,
+  createSession,
+  listMessages,
+  listSessions,
+  starMessage,
+  updateSession
+} from "./sessions.js";
 
 export type ProjectBundle = {
   version: 1;
@@ -13,7 +21,12 @@ export type ProjectBundle = {
     archived: boolean;
     messages: Array<{ role: string; content: string; starred?: boolean }>;
   }>;
-  knowledgeList: Array<{ title: string; tags: string; sourceName: string; text: string }>;
+  knowledgeList: Array<{
+    title: string;
+    tags: string;
+    sourceName: string;
+    text: string;
+  }>;
   settings: Record<string, string>;
 };
 
@@ -21,14 +34,20 @@ export function serializeProjectBundle(bundle: ProjectBundle): string {
   return JSON.stringify(bundle);
 }
 
-export async function buildProjectBundle(db: Db, projectId: string): Promise<ProjectBundle> {
+export async function buildProjectBundle(
+  db: Db,
+  projectId: string
+): Promise<ProjectBundle> {
   const project = await getProject(db, projectId);
   if (!project) {
-    throw Object.assign(new Error("项目不存在"), { code: "NOT_FOUND", error: "项目不存在" });
+    throw Object.assign(new Error("项目不存在"), {
+      code: "NOT_FOUND",
+      error: "项目不存在"
+    });
   }
   const sessions = await listSessions(db, projectId, "");
   const knowledgeList = await listKnowledge(db, projectId);
-  const settings = await getSettingsMap(db);
+  const settings = publicSettings(await getSettingsMap(db));
   return {
     version: 1,
     project: { name: project.name, description: project.description },
@@ -39,7 +58,11 @@ export async function buildProjectBundle(db: Db, projectId: string): Promise<Pro
           title: s.title,
           pinned: s.pinned,
           archived: s.archived,
-          messages: messages.map((m) => ({ role: m.role, content: m.content, starred: m.starred }))
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            starred: m.starred
+          }))
         };
       })
     ),
@@ -67,7 +90,12 @@ export async function applyProjectBundle(
     await addKnowledge(db, {
       projectId: project.id,
       filename: k.title || "imported.md",
-      tags: k.tags ? k.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+      tags: k.tags
+        ? k.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : [],
       text: k.text,
       storeDir,
       bytes
@@ -76,7 +104,10 @@ export async function applyProjectBundle(
   for (const s of bundle.sessions) {
     const session = await createSession(db, project.id, s.title);
     if (s.pinned || s.archived) {
-      await updateSession(db, session.id, { pinned: s.pinned, archived: s.archived });
+      await updateSession(db, session.id, {
+        pinned: s.pinned,
+        archived: s.archived
+      });
     }
     for (const m of s.messages) {
       const msg = await addMessage(db, session.id, m.role, m.content);
@@ -85,7 +116,7 @@ export async function applyProjectBundle(
       }
     }
   }
-  for (const [key, value] of Object.entries(bundle.settings)) {
+  for (const [key, value] of Object.entries(publicSettings(bundle.settings))) {
     await setSetting(db, key, value);
   }
   return { projectId: project.id };
@@ -93,8 +124,16 @@ export async function applyProjectBundle(
 
 export function parseProjectBundle(raw: string): ProjectBundle {
   const parsed = JSON.parse(raw) as Partial<ProjectBundle>;
-  if (parsed.version !== 1 || !parsed.project || !Array.isArray(parsed.sessions) || !Array.isArray(parsed.knowledgeList)) {
-    throw Object.assign(new Error("无效的项目导出"), { code: "INVALID_BUNDLE", error: "无效的项目导出" });
+  if (
+    parsed.version !== 1 ||
+    !parsed.project ||
+    !Array.isArray(parsed.sessions) ||
+    !Array.isArray(parsed.knowledgeList)
+  ) {
+    throw Object.assign(new Error("无效的项目导出"), {
+      code: "INVALID_BUNDLE",
+      error: "无效的项目导出"
+    });
   }
   return {
     version: 1,
@@ -120,6 +159,9 @@ export function parseProjectBundle(raw: string): ProjectBundle {
       sourceName: String(k.sourceName || k.title || ""),
       text: String(k.text || "")
     })),
-    settings: parsed.settings && typeof parsed.settings === "object" ? { ...parsed.settings } : {}
+    settings:
+      parsed.settings && typeof parsed.settings === "object"
+        ? { ...parsed.settings }
+        : {}
   };
 }

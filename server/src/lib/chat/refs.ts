@@ -12,12 +12,22 @@ const KIND_BY_LABEL: Record<string, ChatRef["kind"]> = {
 
 export function parseAtMentions(input: string): Mention[] {
   const found: Mention[] = [];
-  const re = /@(文件夹|文件|知识|规则)(?:[:：\s]+([^\s@，、。；]+))?/g;
+  const re =
+    /@(文件夹|文件|知识|规则)(?:[:：\s]+("(?:\\.|[^"\\])*"|[^\s@，、。；]+))?/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(input))) {
     const kind = KIND_BY_LABEL[match[1] ?? ""];
     if (!kind) continue;
-    found.push({ kind, name: match[2] || "" });
+    const raw = match[2] || "";
+    let name = raw;
+    if (raw.startsWith('"')) {
+      try {
+        name = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+    }
+    found.push({ kind, name });
   }
   return found;
 }
@@ -26,14 +36,24 @@ export type RefLoaders = {
   readFile?: (rel: string) => Promise<string>;
   listTree?: () => Promise<TreeNode[]>;
   loadRules?: () => Promise<{ file: string | null; content: string }>;
-  loadKnowledge?: (name: string) => Promise<{ title: string; content: string } | null>;
+  loadKnowledge?: (
+    name: string
+  ) => Promise<{ title: string; content: string } | null>;
 };
 
 function flattenFiles(nodes: TreeNode[], prefix = ""): string[] {
+  prefix = prefix
+    .replaceAll("\\", "/")
+    .replace(/^\.\/?$/, "")
+    .replace(/^\.\//, "");
   const out: string[] = [];
   for (const node of nodes) {
     if (node.type === "file") {
-      if (!prefix || node.rel === prefix || node.rel.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`)) {
+      if (
+        !prefix ||
+        node.rel === prefix ||
+        node.rel.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`)
+      ) {
         out.push(node.rel);
       }
     }
@@ -42,7 +62,10 @@ function flattenFiles(nodes: TreeNode[], prefix = ""): string[] {
   return out;
 }
 
-export async function resolveChatRefs(mentions: Mention[], loaders: RefLoaders): Promise<ChatRef[]> {
+export async function resolveChatRefs(
+  mentions: Mention[],
+  loaders: RefLoaders
+): Promise<ChatRef[]> {
   const refs: ChatRef[] = [];
   for (const mention of mentions) {
     if (mention.kind === "file") {
@@ -54,15 +77,24 @@ export async function resolveChatRefs(mentions: Mention[], loaders: RefLoaders):
       const tree = await loaders.listTree();
       const files = flattenFiles(tree, mention.name);
       const listing = files.join("\n");
-      refs.push({ kind: "folder", name: mention.name || ".", content: listing || "(空目录)" });
+      refs.push({
+        kind: "folder",
+        name: mention.name || ".",
+        content: listing || "(空目录)"
+      });
     } else if (mention.kind === "rules") {
       if (!loaders.loadRules) continue;
       const rules = await loaders.loadRules();
-      refs.push({ kind: "rules", name: rules.file || "规则", content: rules.content || "(无规则文件)" });
+      refs.push({
+        kind: "rules",
+        name: rules.file || "规则",
+        content: rules.content || "(无规则文件)"
+      });
     } else if (mention.kind === "knowledge") {
       if (!loaders.loadKnowledge) continue;
       const doc = await loaders.loadKnowledge(mention.name);
-      if (doc) refs.push({ kind: "knowledge", name: doc.title, content: doc.content });
+      if (doc)
+        refs.push({ kind: "knowledge", name: doc.title, content: doc.content });
     }
   }
   return refs;
