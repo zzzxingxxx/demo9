@@ -4,6 +4,15 @@ import { Canvas } from "../components/Canvas";
 import { ChatPane, SessionsPanel } from "../components/ChatPane";
 import { FileTree } from "../components/FileTree";
 import { KnowledgePanel } from "../components/KnowledgePanel";
+import {
+  AgentPanel,
+  ContentSearchPanel,
+  GitPanel,
+  McpPanel,
+  SchedulePanel,
+  TerminalPanel,
+  WebPanel
+} from "../components/WorkbenchTools";
 import { useWorkbench, type TreeNode } from "../store";
 
 export function Workbench() {
@@ -110,6 +119,66 @@ export function Workbench() {
           <section className="section">
             <h3>知识</h3>
             <KnowledgePanel />
+          </section>
+          <section className="section">
+            <h3>内容搜索</h3>
+            <ContentSearchPanel />
+          </section>
+          <section className="section">
+            <h3>Git</h3>
+            <GitPanel />
+          </section>
+          <section className="section">
+            <h3>终端</h3>
+            <TerminalPanel />
+          </section>
+          <section className="section">
+            <h3>网页</h3>
+            <WebPanel />
+          </section>
+          <section className="section">
+            <h3>Agent</h3>
+            <AgentPanel />
+          </section>
+          <section className="section">
+            <h3>定时任务</h3>
+            <SchedulePanel />
+          </section>
+          <section className="section">
+            <h3>MCP</h3>
+            <McpPanel />
+          </section>
+          <section className="section">
+            <h3>导入 / 导出</h3>
+            {current ? (
+              <div className="row-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    const data = await apiGet<{ json: string }>(`/api/projects/${current.id}/export`);
+                    await navigator.clipboard.writeText(data.json);
+                    setNotice("已复制导出 JSON（不含代码目录）");
+                  }}
+                >
+                  导出项目
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    const json = window.prompt("粘贴导出 JSON");
+                    if (!json) return;
+                    await apiSend("/api/projects/import", "POST", { json });
+                    await refresh();
+                  }}
+                >
+                  导入项目
+                </button>
+              </div>
+            ) : (
+              <p className="hint">选择项目后可导出会话、知识清单和设置。</p>
+            )}
           </section>
         </div>
       </aside>

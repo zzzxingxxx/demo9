@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { getDb } from "../lib/db/index.js";
 import { publicError } from "../lib/env.js";
+import path from "node:path";
+import { applyProjectBundle, buildProjectBundle, parseProjectBundle, serializeProjectBundle } from "../lib/bundle.js";
 import {
   createProject,
   deleteProject,
@@ -62,6 +64,36 @@ projectRoutes.delete("/api/projects/:id", async (c) => {
   const db = await getDb();
   await deleteProject(db, c.req.param("id"));
   return c.json({ ok: true });
+});
+
+projectRoutes.get("/api/projects/:id/export", async (c) => {
+  try {
+    const db = await getDb();
+    const bundle = await buildProjectBundle(db, c.req.param("id"));
+    return c.json({ bundle, json: serializeProjectBundle(bundle) });
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
+});
+
+projectRoutes.post("/api/projects/import", async (c) => {
+  try {
+    const body = z
+      .object({
+        json: z.string().optional(),
+        bundle: z.unknown().optional()
+      })
+      .parse(await c.req.json());
+    const raw = body.json || JSON.stringify(body.bundle ?? {});
+    const bundle = parseProjectBundle(raw);
+    const db = await getDb();
+    const storeDir = path.join(process.env.REPO_ROOT || process.cwd(), "data", "knowledge");
+    const result = await applyProjectBundle(db, bundle, storeDir);
+    const project = await getProject(db, result.projectId);
+    return c.json({ project }, 201);
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
 });
 
 projectRoutes.get("/api/projects/:id/rules", async (c) => {

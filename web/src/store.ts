@@ -32,6 +32,7 @@ type State = {
   tabs: FileTab[];
   activePath: string | null;
   pendingDiff: PendingDiff | null;
+  citeDraft: string | null;
   setProjects: (projects: Project[]) => void;
   setCurrentId: (id: string | null) => void;
   setSessionId: (id: string | null) => void;
@@ -45,6 +46,7 @@ type State = {
   closeTab: (path: string) => void;
   setActivePath: (path: string | null) => void;
   setPendingDiff: (diff: PendingDiff | null) => void;
+  setCiteDraft: (cite: string | null) => void;
 };
 
 const persistKey = "wb.currentProject";
@@ -60,6 +62,7 @@ export const useWorkbench = create<State>((set) => ({
   tabs: [],
   activePath: null,
   pendingDiff: null,
+  citeDraft: null,
   setProjects: (projects) => set({ projects }),
   setCurrentId: (id) => {
     set((s) => {
@@ -97,5 +100,6 @@ export const useWorkbench = create<State>((set) => ({
       return { tabs, activePath };
     }),
   setActivePath: (path) => set({ activePath: path }),
-  setPendingDiff: (pendingDiff) => set({ pendingDiff })
+  setPendingDiff: (pendingDiff) => set({ pendingDiff }),
+  setCiteDraft: (citeDraft) => set({ citeDraft })
 }));

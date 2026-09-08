@@ -22,6 +22,8 @@ export async function createSession(db: Db, projectId: string, title?: string): 
     title: (title?.trim() || "新会话").slice(0, 40),
     pinned: false,
     archived: false,
+    parentId: null,
+    branchFrom: null,
     createdAt: now,
     updatedAt: now
   };
@@ -68,6 +70,7 @@ export async function addMessage(
     sessionId,
     role,
     content,
+    starred: false,
     createdAt: Date.now()
   };
   await db.insert(messages).values(row);
@@ -88,4 +91,46 @@ export async function truncateFrom(db: Db, sessionId: string, messageId: string)
 export function ensureSessionTitle(session: Session, prompt: string): string {
   if (session.title !== "新会话") return session.title;
   return titleFromPrompt(prompt);
+}
+
+export async function starMessage(db: Db, messageId: string, starred: boolean): Promise<Message> {
+  const rows = await db.select().from(messages).where(eq(messages.id, messageId));
+  const current = rows[0];
+  if (!current) throw pathError("NOT_FOUND", "消息不存在");
+  const next = { ...current, starred };
+  await db.update(messages).set({ starred }).where(eq(messages.id, messageId));
+  return next;
+}
+
+export async function branchSession(db: Db, sessionId: string, messageId: string): Promise<Session> {
+  const source = await getSession(db, sessionId);
+  if (!source) throw pathError("NOT_FOUND", "会话不存在");
+  const all = await listMessages(db, sessionId);
+  const idx = all.findIndex((m) => m.id === messageId);
+  if (idx < 0) throw pathError("NOT_FOUND", "消息不存在");
+  const keep = all.slice(0, idx + 1);
+  const now = Date.now();
+  const row: Session = {
+    id: randomUUID(),
+    projectId: source.projectId,
+    title: `${source.title} · 分支`,
+    pinned: false,
+    archived: false,
+    parentId: source.id,
+    branchFrom: messageId,
+    createdAt: now,
+    updatedAt: now
+  };
+  await db.insert(sessions).values(row);
+  for (const msg of keep) {
+    await db.insert(messages).values({
+      id: randomUUID(),
+      sessionId: row.id,
+      role: msg.role,
+      content: msg.content,
+      starred: msg.starred,
+      createdAt: msg.createdAt
+    });
+  }
+  return row;
 }

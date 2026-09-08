@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db/index.js";
 import { projects, type Project } from "./db/schema.js";
+
+export type { Project };
 import { pathError } from "./paths.js";
 import { loadProjectRules, type RulesLoad } from "./rules.js";
 

@@ -106,7 +106,7 @@ a {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 240px minmax(320px, 1fr) minmax(320px, 1fr);
+  grid-template-columns: 280px minmax(320px, 1fr) minmax(320px, 1fr);
 }
 
 .pane {
@@ -439,4 +439,76 @@ a {
   color: var(--muted);
   font-size: 11px;
   margin-right: 6px;
+}
+
+.source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--fill);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.source-card span {
+  color: var(--muted);
+}
+
+.source-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+  max-height: 160px;
+  overflow: auto;
+}
+
+.git-status,
+.term-out,
+.cite-preview {
+  margin: 6px 0;
+  padding: 8px;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  background: var(--fill);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.preview-host {
+  max-height: 240px;
+  overflow: auto;
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+}
+
+.preview-host img {
+  max-width: 100%;
+  max-height: 220px;
+}
+
+.preview-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.preview-table td {
+  border: 1px solid var(--line);
+  padding: 4px 6px;
+}
+
+mark {
+  background: #e4d36a;
+  color: inherit;
 }

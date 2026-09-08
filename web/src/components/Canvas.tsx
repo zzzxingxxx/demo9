@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
-import { apiSend } from "../api";
+import { apiGet, apiSend } from "../api";
 import { languageFromPath } from "../lib/languageFromPath";
 import { useWorkbench } from "../store";
 
@@ -45,6 +45,29 @@ export function Canvas() {
   const tab = tabs.find((t) => t.path === activePath) ?? null;
   const dirty = tab ? tab.content !== tab.original : false;
   const theme = useEditorTheme();
+  const [preview, setPreview] = useState<{
+    kind: string;
+    rows?: string[][];
+    text?: string;
+    url?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!currentId || !tab) {
+      setPreview(null);
+      return;
+    }
+    const ext = (tab.path.split(".").pop() || "").toLowerCase();
+    if (!["csv", "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf"].includes(ext)) {
+      setPreview(null);
+      return;
+    }
+    apiGet<{ kind: string; rows?: string[][]; text?: string; url?: string }>(
+      `/api/files/preview?projectId=${encodeURIComponent(currentId)}&path=${encodeURIComponent(tab.path)}`
+    )
+      .then(setPreview)
+      .catch(() => setPreview(null));
+  }, [currentId, tab?.path]);
 
   async function save() {
     if (!currentId || !tab) return;
@@ -92,6 +115,29 @@ export function Canvas() {
       </div>
       {tab ? (
         <>
+          {preview?.kind === "csv" && preview.rows ? (
+            <div className="preview-host">
+              <table className="preview-table">
+                <tbody>
+                  {preview.rows.map((row, i) => (
+                    <tr key={i}>
+                      {row.map((cell, j) => (
+                        <td key={j}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+          {preview?.kind === "image" && preview.url ? (
+            <div className="preview-host">
+              <img src={preview.url} alt={tab.path} />
+            </div>
+          ) : null}
+          {preview?.kind === "pdf" && preview.text ? (
+            <pre className="preview-host">{preview.text}</pre>
+          ) : null}
           <div className="monaco-host">
             <Editor
               key={tab.path}

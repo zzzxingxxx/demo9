@@ -4,10 +4,12 @@ import { exportSessionMarkdown } from "../lib/chat/assemble.js";
 import { getDb } from "../lib/db/index.js";
 import { publicError } from "../lib/env.js";
 import {
+  branchSession,
   createSession,
   getSession,
   listMessages,
   listSessions,
+  starMessage,
   updateSession
 } from "../lib/sessions.js";
 
@@ -59,6 +61,28 @@ sessionRoutes.get("/api/sessions/:id/messages", async (c) => {
   if (!session) return c.json({ code: "NOT_FOUND", error: "会话不存在" }, 404);
   const items = await listMessages(db, session.id);
   return c.json({ session, messages: items });
+});
+
+sessionRoutes.post("/api/sessions/:id/branch", async (c) => {
+  try {
+    const body = z.object({ messageId: z.string().min(1) }).parse(await c.req.json());
+    const db = await getDb();
+    const session = await branchSession(db, c.req.param("id"), body.messageId);
+    return c.json({ session }, 201);
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
+});
+
+sessionRoutes.post("/api/messages/:id/star", async (c) => {
+  try {
+    const body = z.object({ starred: z.boolean() }).parse(await c.req.json());
+    const db = await getDb();
+    const message = await starMessage(db, c.req.param("id"), body.starred);
+    return c.json({ message });
+  } catch (err) {
+    return c.json(publicError(err), 400);
+  }
 });
 
 sessionRoutes.get("/api/sessions/:id/export", async (c) => {

@@ -1,7 +1,16 @@
+import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import type { Db } from "./db/index.js";
+import { customSkills } from "./db/schema.js";
+import { pathError } from "./paths.js";
+
 export type Skill = {
   id: string;
   name: string;
   prompt: string;
+  persona?: string;
+  defaultRefs?: string;
+  builtin?: boolean;
 };
 
 export const SKILLS: Skill[] = [
@@ -48,16 +57,101 @@ export const SKILLS: Skill[] = [
 ];
 
 export function listSkills(): Skill[] {
-  return SKILLS;
+  return SKILLS.map((s) => ({ ...s, builtin: true }));
 }
 
-export function getSkill(id: string): Skill | undefined {
-  return SKILLS.find((s) => s.id === id || s.name === id);
+export function skillFromRow(row: {
+  id: string;
+  name: string;
+  persona: string;
+  defaultRefs: string;
+  prompt: string;
+}): Skill {
+  return {
+    id: row.id,
+    name: row.name,
+    prompt: row.prompt,
+    persona: row.persona,
+    defaultRefs: row.defaultRefs,
+    builtin: false
+  };
+}
+
+export async function listCustomSkills(db: Db, projectId?: string | null): Promise<Skill[]> {
+  const rows = await db.select().from(customSkills);
+  const filtered = projectId
+    ? rows.filter((r) => !r.projectId || r.projectId === projectId)
+    : rows;
+  return filtered.map(skillFromRow);
+}
+
+export async function listAllSkills(db: Db, projectId?: string | null): Promise<Skill[]> {
+  const extras = await listCustomSkills(db, projectId);
+  return [...listSkills(), ...extras];
+}
+
+export async function createCustomSkill(
+  db: Db,
+  input: { projectId?: string | null; name: string; persona?: string; defaultRefs?: string; prompt: string }
+): Promise<Skill> {
+  const name = input.name.trim();
+  const prompt = input.prompt.trim();
+  if (!name || !prompt) throw pathError("INVALID", "技能需要名称和提示词");
+  const row = {
+    id: randomUUID(),
+    projectId: input.projectId ?? null,
+    name,
+    persona: (input.persona || "").trim(),
+    defaultRefs: (input.defaultRefs || "").trim(),
+    prompt,
+    createdAt: Date.now()
+  };
+  await db.insert(customSkills).values(row);
+  return skillFromRow(row);
+}
+
+export async function updateCustomSkill(
+  db: Db,
+  id: string,
+  patch: { name?: string; persona?: string; defaultRefs?: string; prompt?: string }
+): Promise<Skill> {
+  const rows = await db.select().from(customSkills).where(eq(customSkills.id, id));
+  const current = rows[0];
+  if (!current) throw pathError("NOT_FOUND", "技能不存在");
+  const next = {
+    ...current,
+    name: patch.name !== undefined ? patch.name.trim() : current.name,
+    persona: patch.persona !== undefined ? patch.persona.trim() : current.persona,
+    defaultRefs: patch.defaultRefs !== undefined ? patch.defaultRefs.trim() : current.defaultRefs,
+    prompt: patch.prompt !== undefined ? patch.prompt.trim() : current.prompt
+  };
+  if (!next.name || !next.prompt) throw pathError("INVALID", "技能需要名称和提示词");
+  await db.update(customSkills).set(next).where(eq(customSkills.id, id));
+  return skillFromRow(next);
+}
+
+export async function deleteCustomSkill(db: Db, id: string): Promise<void> {
+  await db.delete(customSkills).where(eq(customSkills.id, id));
+}
+
+export function getSkill(id: string, extra: Skill[] = []): Skill | undefined {
+  return [...listSkills(), ...extra].find((s) => s.id === id || s.name === id);
 }
 
 export function skillPromptAssembly(skill: Skill, userText: string): { skillPrompt: string; content: string } {
+  return customSkillPromptAssembly(skill, userText);
+}
+
+export function customSkillPromptAssembly(
+  skill: Skill,
+  userText: string
+): { skillPrompt: string; content: string } {
+  const parts = [`当前技能：${skill.name}`];
+  if (skill.persona?.trim()) parts.push(`人设：${skill.persona.trim()}`);
+  if (skill.defaultRefs?.trim()) parts.push(`默认引用：${skill.defaultRefs.trim()}`);
+  parts.push(skill.prompt);
   return {
-    skillPrompt: `当前技能：${skill.name}\n${skill.prompt}`,
+    skillPrompt: parts.join("\n"),
     content: userText.trim() || `请执行「${skill.name}」。`
   };
 }

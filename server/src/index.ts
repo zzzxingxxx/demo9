@@ -3,7 +3,9 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { app } from "./app.js";
+import { getDb } from "./lib/db/index.js";
 import { readListenHost, readListenPort } from "./lib/env.js";
+import { tickScheduledTasks } from "./lib/schedule.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../");
 config({ path: resolve(root, ".env") });
@@ -19,3 +21,9 @@ if (hostname !== "127.0.0.1") {
 serve({ fetch: app.fetch, hostname, port }, (info) => {
   console.log(`server http://${info.address}:${info.port}`);
 });
+
+setInterval(() => {
+  getDb()
+    .then((db) => tickScheduledTasks(db))
+    .catch(() => undefined);
+}, 30_000);

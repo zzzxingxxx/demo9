@@ -45,6 +45,29 @@ export async function readProjectFile(root: string, rel: string): Promise<string
   return fs.readFile(target, "utf8");
 }
 
+const CONTENT_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  csv: "text/csv"
+};
+
+export async function readProjectFileBytes(
+  root: string,
+  rel: string
+): Promise<{ bytes: Buffer; contentType: string }> {
+  const target = resolveInside(root, rel);
+  const stat = await fs.stat(target);
+  if (!stat.isFile()) throw Object.assign(new Error("不是文件"), { code: "NOT_FILE", error: "不是文件" });
+  const bytes = await fs.readFile(target);
+  const ext = (rel.split(".").pop() || "").toLowerCase();
+  return { bytes, contentType: CONTENT_TYPES[ext] || "application/octet-stream" };
+}
+
 export function requireWriteConfirm(confirm: unknown): void {
   if (confirm !== true) {
     throw Object.assign(new Error("写盘必须用户确认"), {

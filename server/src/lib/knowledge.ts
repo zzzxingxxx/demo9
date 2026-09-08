@@ -4,8 +4,10 @@ import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { extractText, getDocumentProxy } from "unpdf";
 import type { Db } from "./db/index.js";
-import { knowledge, type KnowledgeDoc } from "./db/schema.js";
+import { knowledge, knowledgeVectors, type KnowledgeDoc } from "./db/schema.js";
 import { pathError } from "./paths.js";
+import { searchKnowledgeFts, type SourceCard } from "./fts.js";
+import { citationOffsets, embedText, rankByEmbedding } from "./vector.js";
 
 export function sliceText(text: string, maxChars = 1200): string[] {
   const trimmed = text.replace(/\u0000/g, "").trim();
@@ -66,6 +68,44 @@ export async function listKnowledge(db: Db, projectId: string): Promise<Knowledg
   return db.select().from(knowledge).where(eq(knowledge.projectId, projectId));
 }
 
+export async function getKnowledge(db: Db, id: string): Promise<KnowledgeDoc | undefined> {
+  const rows = await db.select().from(knowledge).where(eq(knowledge.id, id));
+  return rows[0];
+}
+
+export async function searchProjectKnowledge(db: Db, projectId: string, query: string): Promise<SourceCard[]> {
+  const docs = await listKnowledge(db, projectId);
+  return searchKnowledgeFts(docs, query);
+}
+
+export async function vectorSearchKnowledge(db: Db, projectId: string, query: string, limit = 8) {
+  const rows = await db.select().from(knowledgeVectors).where(eq(knowledgeVectors.projectId, projectId));
+  const qv = embedText(query);
+  const ranked = rankByEmbedding(
+    qv,
+    rows.map((r) => ({
+      id: r.id,
+      vector: JSON.parse(r.vectorJson) as number[],
+      text: r.text
+    }))
+  ).slice(0, limit);
+  const docs = await listKnowledge(db, projectId);
+  const byId = new Map(docs.map((d) => [d.id, d]));
+  return ranked.map((hit) => {
+    const row = rows.find((r) => r.id === hit.id);
+    const doc = row ? byId.get(row.docId) : undefined;
+    const text = row?.text || "";
+    return {
+      id: hit.id,
+      docId: row?.docId || "",
+      title: doc?.title || row?.docId || hit.id,
+      score: hit.score,
+      text,
+      citation: citationOffsets(text, query)
+    };
+  });
+}
+
 export async function addKnowledge(
   db: Db,
   input: { projectId: string; filename: string; tags: string[]; text: string; storeDir: string; bytes: Uint8Array }
@@ -84,5 +124,17 @@ export async function addKnowledge(
     createdAt: Date.now()
   };
   await db.insert(knowledge).values(row);
+  const chunks = sliceText(input.text, 800);
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i] ?? "";
+    await db.insert(knowledgeVectors).values({
+      id: randomUUID(),
+      docId: id,
+      projectId: input.projectId,
+      chunkIndex: i,
+      text: chunk,
+      vectorJson: JSON.stringify(embedText(`${input.filename}\n${chunk}`))
+    });
+  }
   return row;
 }

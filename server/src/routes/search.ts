@@ -6,7 +6,7 @@ import { listKnowledge } from "../lib/knowledge.js";
 import { listProjects } from "../lib/projects.js";
 import { flattenFileNames, matchSearch, type SearchItem } from "../lib/search.js";
 import { listSessions } from "../lib/sessions.js";
-import { listSkills } from "../lib/skills.js";
+import { listAllSkills } from "../lib/skills.js";
 
 export const searchRoutes = new Hono();
 
@@ -18,7 +18,9 @@ searchRoutes.get("/api/search", async (c) => {
     const items: SearchItem[] = [];
     const projects = await listProjects(db);
     for (const p of projects) items.push({ kind: "project", id: p.id, title: p.name, hint: p.rootPath || "" });
-    for (const s of listSkills()) items.push({ kind: "skill", id: s.id, title: s.name, hint: s.prompt });
+    for (const s of await listAllSkills(db, projectId)) {
+      items.push({ kind: "skill", id: s.id, title: s.name, hint: s.prompt });
+    }
     if (projectId) {
       const sessions = await listSessions(db, projectId, "");
       for (const s of sessions) items.push({ kind: "session", id: s.id, title: s.title });

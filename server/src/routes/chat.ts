@@ -6,7 +6,8 @@ import { streamWorkbenchChat } from "../lib/chat/stream.js";
 import { getDb } from "../lib/db/index.js";
 import { getMissingKeyError, publicError, readModel } from "../lib/env.js";
 import { listTree, readProjectFile } from "../lib/files.js";
-import { attachKnowledgeSlices, listKnowledge } from "../lib/knowledge.js";
+import { formatSourceCardsPrompt } from "../lib/fts.js";
+import { attachKnowledgeSlices, listKnowledge, searchProjectKnowledge } from "../lib/knowledge.js";
 import { getProject } from "../lib/projects.js";
 import { loadProjectRules } from "../lib/rules.js";
 import {
@@ -18,7 +19,8 @@ import {
   truncateFrom,
   updateSession
 } from "../lib/sessions.js";
-import { getSkill, skillPromptAssembly } from "../lib/skills.js";
+import { getSkill, listCustomSkills, skillPromptAssembly } from "../lib/skills.js";
+import { recordUsage } from "../lib/usage.js";
 
 export const chatRoutes = new Hono();
 
@@ -34,7 +36,10 @@ chatRoutes.post("/api/chat", async (c) => {
         content: z.string().min(1),
         model: z.string().optional(),
         skillId: z.string().optional(),
-        truncateFromMessageId: z.string().optional()
+        truncateFromMessageId: z.string().optional(),
+        images: z
+          .array(z.object({ mimeType: z.string().min(1), dataBase64: z.string().min(1) }))
+          .optional()
       })
       .parse(await c.req.json());
 
@@ -49,7 +54,8 @@ chatRoutes.post("/api/chat", async (c) => {
       await truncateFrom(db, session.id, body.truncateFromMessageId);
     }
 
-    const skill = body.skillId ? getSkill(body.skillId) : undefined;
+    const extras = await listCustomSkills(db, body.projectId);
+    const skill = body.skillId ? getSkill(body.skillId, extras) : undefined;
     const packed = skill ? skillPromptAssembly(skill, body.content) : { skillPrompt: "", content: body.content };
     await addMessage(db, session.id, "user", packed.content);
     const title = ensureSessionTitle(session, body.content);
@@ -83,7 +89,9 @@ chatRoutes.post("/api/chat", async (c) => {
       role: m.role as ChatTurn["role"],
       content: m.content
     }));
-    const system = assembleSystemPrompt({ rules, refs, skillPrompt: packed.skillPrompt });
+    const cards = await searchProjectKnowledge(db, project.id, packed.content);
+    const skillPrompt = [packed.skillPrompt, formatSourceCardsPrompt(cards)].filter(Boolean).join("\n\n");
+    const system = assembleSystemPrompt({ rules, refs, skillPrompt });
     const messages = toModelMessages(system, turns);
 
     const result = streamWorkbenchChat({
@@ -92,13 +100,21 @@ chatRoutes.post("/api/chat", async (c) => {
       messages,
       abortSignal: c.req.raw.signal,
       rootPath: project.rootPath,
-      onFinish: async (text) => {
+      images: body.images,
+      onFinish: async (text, usage) => {
         if (text.trim()) await addMessage(db, session.id, "assistant", text);
+        await recordUsage(db, {
+          projectId: project.id,
+          kind: "chat",
+          tokensIn: usage?.tokensIn,
+          tokensOut: usage?.tokensOut
+        });
       }
     });
 
     const response = result.toTextStreamResponse();
     response.headers.set("x-session-id", session.id);
+    response.headers.set("x-source-cards", encodeURIComponent(JSON.stringify(cards.slice(0, 8))));
     return response;
   } catch (err) {
     return c.json(publicError(err), 400);

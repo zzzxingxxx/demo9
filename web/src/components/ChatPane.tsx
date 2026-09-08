@@ -14,7 +14,10 @@ type ChatMessage = {
   id?: string;
   role: string;
   content: string;
+  starred?: boolean;
 };
+
+type SourceCard = { id: string; title: string; snippet: string; score: number };
 
 export function SessionsPanel() {
   const { currentId, sessionId, setSessionId, setNotice } = useWorkbench();
@@ -109,14 +112,33 @@ export function SessionsPanel() {
 }
 
 export function ChatPane() {
-  const { currentId, sessionId, setSessionId, setNotice, activePath, tree, tabs, setPendingDiff } =
-    useWorkbench();
+  const {
+    currentId,
+    sessionId,
+    setSessionId,
+    setNotice,
+    activePath,
+    tree,
+    tabs,
+    setPendingDiff,
+    citeDraft,
+    setCiteDraft,
+    openTab
+  } = useWorkbench();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [skills, setSkills] = useState<Array<{ id: string; name: string }>>([]);
   const [skillId, setSkillId] = useState("");
+  const [sourceCards, setSourceCards] = useState<SourceCard[]>([]);
+  const [images, setImages] = useState<Array<{ mimeType: string; dataBase64: string }>>([]);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!citeDraft) return;
+    setDraft((d) => (d ? `${d}\n${citeDraft}` : citeDraft));
+    setCiteDraft(null);
+  }, [citeDraft, setCiteDraft]);
 
   async function loadMessages(id: string) {
     const data = await apiGet<{ messages: ChatMessage[] }>(`/api/sessions/${id}/messages`);
@@ -156,12 +178,21 @@ export function ChatPane() {
           model: localStorage.getItem("wb.model") || undefined,
           content,
           skillId: skillId || undefined,
-          truncateFromMessageId
+          truncateFromMessageId,
+          images: images.length ? images : undefined
         })
       });
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
         throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      const cardsHeader = res.headers.get("x-source-cards");
+      if (cardsHeader) {
+        try {
+          setSourceCards(JSON.parse(decodeURIComponent(cardsHeader)) as SourceCard[]);
+        } catch {
+          setSourceCards([]);
+        }
       }
       const newId = res.headers.get("x-session-id");
       if (newId && newId !== sessionId) setSessionId(newId);
@@ -208,6 +239,34 @@ export function ChatPane() {
             <article key={m.id || i} className={`bubble ${m.role}`}>
               <header>
                 {m.role === "user" ? "用户" : "助手"}
+                {m.starred ? " ★" : ""}
+                <span className="row-actions">
+                {m.id ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={async () => {
+                      await apiSend(`/api/messages/${m.id}/star`, "POST", { starred: !m.starred });
+                      if (sessionId) await loadMessages(sessionId);
+                    }}
+                  >
+                    {m.starred ? "取消收藏" : "收藏"}
+                  </button>
+                ) : null}
+                {m.id && sessionId ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={async () => {
+                      const created = await apiSend<{ session: Session }>("/api/sessions/" + sessionId + "/branch", "POST", {
+                        messageId: m.id
+                      });
+                      setSessionId(created.session.id);
+                    }}
+                  >
+                    从此分支
+                  </button>
+                ) : null}
                 {m.role === "user" && m.id ? (
                   <button
                     type="button"
@@ -220,6 +279,7 @@ export function ChatPane() {
                     编辑重发
                   </button>
                 ) : null}
+                </span>
               </header>
               <pre>{m.content}</pre>
               {m.role === "assistant"
@@ -250,6 +310,30 @@ export function ChatPane() {
           ))
         )}
       </div>
+      {sourceCards.length > 0 ? (
+        <div className="source-row">
+          {sourceCards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              className="source-card"
+              onClick={async () => {
+                const data = await apiGet<{ knowledge: { title: string; text: string } }>(
+                  `/api/knowledge/${card.id}`
+                );
+                openTab({
+                  path: `.knowledge/${data.knowledge.title}`,
+                  content: data.knowledge.text,
+                  original: data.knowledge.text
+                });
+              }}
+            >
+              <strong>{card.title}</strong>
+              <span>{card.snippet}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <form className="composer" onSubmit={onSubmit}>
         <div className="at-bar" aria-label="引用">
           <button
@@ -285,6 +369,22 @@ export function ChatPane() {
             </option>
           ))}
         </select>
+        <input
+          type="file"
+          accept="image/*"
+          aria-label="看图"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const buf = await file.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = "";
+            bytes.forEach((b) => {
+              binary += String.fromCharCode(b);
+            });
+            setImages([{ mimeType: file.type || "image/png", dataBase64: btoa(binary) }]);
+          }}
+        />
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

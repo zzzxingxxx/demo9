@@ -23,7 +23,7 @@ describe("read-only model tools", () => {
     await expect(executeReadFile(root, "../secret")).rejects.toThrow(/超出项目目录/);
 
     const tools = workbenchTools(root);
-    expect(Object.keys(tools).sort()).toEqual(["list_dir", "read_file"]);
+    expect(Object.keys(tools).sort()).toEqual(["fetch_page", "list_dir", "read_file", "web_search"]);
     expect(Object.keys(tools)).not.toContain("write_file");
   });
 });
