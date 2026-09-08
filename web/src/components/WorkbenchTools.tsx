@@ -207,28 +207,38 @@ export function AgentPanel() {
           <div className="hint">{item.path}</div>
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn"
             onClick={async () => {
               try {
-                const data = await apiSend<{ diff: string; content: string }>("/api/agent/apply", "POST", {
+                const data = await apiSend<{
+                  written: boolean;
+                  before: string;
+                  after: string;
+                  content: string;
+                  diff: string;
+                }>("/api/agent/apply", "POST", {
                   projectId: currentId,
                   path: item.path,
                   after: item.after,
-                  confirm: true
+                  confirm: false
                 });
+                if (data.written) {
+                  setNotice("预览不应写盘");
+                  return;
+                }
                 setPendingDiff({
                   path: item.path,
-                  before: "",
-                  after: data.content,
+                  before: data.before,
+                  after: data.after ?? data.content,
                   diff: data.diff
                 });
-                setNotice(`已确认写盘 ${item.path}`);
+                setNotice(`${item.path} 的 diff 已放到画布，确认后写盘`);
               } catch (err) {
-                setNotice(err instanceof Error ? err.message : "应用失败");
+                setNotice(err instanceof Error ? err.message : "无法预览 diff");
               }
             }}
           >
-            确认写 {item.path}
+            预览 diff {item.path}
           </button>
         </div>
       ))}

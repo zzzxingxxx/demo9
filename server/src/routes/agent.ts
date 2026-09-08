@@ -2,10 +2,10 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { generateText } from "ai";
 import { createXai } from "@ai-sdk/xai";
-import { applyAgentItem, parseAgentPlan } from "../lib/agent.js";
+import { commitAgentItem, parseAgentPlan } from "../lib/agent.js";
 import { boundRoot } from "../lib/bound.js";
 import { getMissingKeyError, publicError, readModel } from "../lib/env.js";
-import { readProjectFile, writeProjectFile } from "../lib/files.js";
+import { readProjectFile } from "../lib/files.js";
 
 export const agentRoutes = new Hono();
 
@@ -54,9 +54,21 @@ agentRoutes.post("/api/agent/apply", async (c) => {
     } catch {
       current = "";
     }
-    const applied = applyAgentItem(current, { path: body.path, after: body.after }, body.confirm);
-    await writeProjectFile(root, applied.path, applied.content, body.confirm);
-    return c.json({ ok: true, path: applied.path, diff: applied.diff, content: applied.content });
+    const applied = await commitAgentItem(
+      root,
+      current,
+      { path: body.path, after: body.after },
+      body.confirm
+    );
+    return c.json({
+      ok: true,
+      written: applied.written,
+      path: applied.path,
+      before: applied.before,
+      after: applied.after,
+      content: applied.content,
+      diff: applied.diff
+    });
   } catch (err) {
     return c.json(publicError(err), 400);
   }

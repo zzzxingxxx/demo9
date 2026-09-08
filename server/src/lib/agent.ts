@@ -1,9 +1,18 @@
 import { createUnifiedDiff } from "@wb/shared";
-import { requireWriteConfirm } from "./files.js";
+import { writeProjectFile } from "./files.js";
 
 export type AgentItem = {
   path: string;
   after: string;
+};
+
+export type AgentPreview = {
+  path: string;
+  before: string;
+  after: string;
+  content: string;
+  diff: string;
+  written: boolean;
 };
 
 export function parseAgentPlan(markdown: string): AgentItem[] {
@@ -26,15 +35,30 @@ export function parseAgentPlan(markdown: string): AgentItem[] {
   return items;
 }
 
-export function applyAgentItem(
+export function previewAgentItem(current: string, item: AgentItem): AgentPreview {
+  return {
+    path: item.path,
+    before: current,
+    after: item.after,
+    content: item.after,
+    diff: createUnifiedDiff(item.path, current, item.after),
+    written: false
+  };
+}
+
+export function applyAgentItem(current: string, item: AgentItem, confirm: unknown): AgentPreview {
+  const preview = previewAgentItem(current, item);
+  return { ...preview, written: confirm === true };
+}
+
+export async function commitAgentItem(
+  root: string,
   current: string,
   item: AgentItem,
   confirm: unknown
-): { path: string; content: string; diff: string } {
-  requireWriteConfirm(confirm);
-  return {
-    path: item.path,
-    content: item.after,
-    diff: createUnifiedDiff(item.path, current, item.after)
-  };
+): Promise<AgentPreview> {
+  const applied = applyAgentItem(current, item, confirm);
+  if (!applied.written) return applied;
+  await writeProjectFile(root, applied.path, applied.content, true);
+  return applied;
 }
